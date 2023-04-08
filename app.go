@@ -33,7 +33,7 @@ func (a *App) startup(ctx context.Context) {
 // DoStuff does stuff
 func (a *App) DoStuff() {
 	// load the dataset
-	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_light")
+	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight")
 	require.NoError(err)
 
 	xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
@@ -41,19 +41,26 @@ func (a *App) DoStuff() {
 
 	//create the model
 	model, _ := m.NewSequential("mnist")
+
+	//model.AddLayers(
+	//	layer.Conv2D{Input: 3, Output: 10, Width: 3, Height: 3},
+	//	layer.Conv2D{Input: 10, Output: 10, Width: 3, Height: 3},
+	//	layer.MaxPooling2D{Kernel: []int{2, 2}, Stride: []int{2, 2}},
+	//	layer.Conv2D{Input: 10, Output: 10, Width: 3, Height: 3},
+	//	layer.Conv2D{Input: 10, Output: 10, Width: 3, Height: 3},
+	//	layer.MaxPooling2D{Kernel: []int{2, 2}, Stride: []int{2, 2}},
+	//	layer.Flatten{},
+	//	layer.FC{Input: 10 * 7 * 7, Output: 10, Activation: layer.Softmax},
+	//)
+
 	model.AddLayers(
-		layer.Conv2D{Input: 3, Output: 32, Width: 3, Height: 3},
-		layer.MaxPooling2D{},
-		layer.Conv2D{Input: 32, Output: 64, Width: 3, Height: 3},
-		layer.MaxPooling2D{},
-		layer.Conv2D{Input: 64, Output: 128, Width: 3, Height: 3},
-		layer.MaxPooling2D{},
+		layer.Conv2D{Input: 3, Output: 1, Width: 4, Height: 4, Pad: []int{2, 2}},       // W + 2P - (K-1) = 29, 29
+		layer.MaxPooling2D{Kernel: []int{3, 3}, Pad: []int{1, 1}, Stride: []int{1, 1}}, // = 31, 31
 		layer.Flatten{},
-		layer.FC{Input: 128 * 3 * 3, Output: 100},
-		layer.FC{Input: 100, Output: 10, Activation: layer.Softmax},
+		layer.FC{Input: 1 * 29 * 29, Output: 10, Activation: layer.Softmax},
 	)
 	optimizer := g.NewAdamSolver()
-	batchSize := 10
+	batchSize := 5
 	err = model.Compile(
 		m.NewInput("x", []int{1, 3, 28, 28}),
 		m.NewInput("y", []int{1, dataset.NumClasses()}),
