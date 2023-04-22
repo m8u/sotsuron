@@ -6,31 +6,34 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/exp/rand"
 	"log"
-	"math"
+	"sotsuron/internal/utils"
 )
 
 const (
-	maxConvMaxPoolingPairs = 1
+	maxConvMaxPoolingPairs = 3
 
-	maxConvOutput       = 16
-	maxConvKernelWidth  = 4
-	maxConvKernelHeight = 4
-	maxConvPad          = 2
-	maxConvStride       = 3
+	maxConvOutput     = 16
+	maxConvKernelSize = 16
+	maxConvPad        = 2
+	maxConvStride     = 1
 
-	maxPoolKernelWidth  = 4
-	maxPoolKernelHeight = 4
-	maxPoolPad          = 2
-	maxPoolStride       = 3
+	maxPoolKernelSize = 16
+	maxPoolPad        = 2
+	maxPoolStride     = 1
 
-	maxDenseLayers = 1
+	maxDenseLayers = 3
 	maxDenseSize   = 1024
+
+	minResolutionWidth  = 3
+	minResolutionHeight = 3
+
+	mutationChance = 0.05
 )
 
 var activationFns = []layer.ActivationFn{
 	layer.Linear,
 	layer.Sigmoid,
-	layer.Softmax,
+	//layer.Softmax,
 	layer.Tanh,
 	layer.ReLU,
 	layer.LeakyReLU,
@@ -40,92 +43,111 @@ type Individual struct {
 	*m.Sequential
 }
 
-func NewIndividual() (individual *Individual) {
+func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individual) {
 	model, _ := m.NewSequential(uuid.New().String()) // TODO: specify metrics
+	model.AddLayers(generateRandomStructure(inputWidth, inputHeight, numClasses)...)
+	err := model.Compile(
+		m.NewInput("x", []int{1, 3, inputWidth, inputHeight}),
+		m.NewInput("y", []int{1, numClasses}),
+	)
+	utils.MaybeCrash(err)
 	individual = &Individual{model}
+
 	return
 }
 
-func generateRandomStructure(inputWidth, inputHeight, numClasses int) (layers []layer.Config) {
-	rand.Seed(0)
-	// 2, : Impossible width/kernel/pad combination
-	// 1, 3, 4, : index out of range [3] with length 3
-	// 5, 6, 7: Failed to infer shape. Op: A × B: Inner dimensions do not match up (35 != 63)
+func (individual *Individual) Mutate() error {
+	// get a slice of layers of a model
+	layers := make([]layer.Config, len(individual.Chain.Layers))
+	copy(layers, individual.Chain.Layers)
+	log.Println(layers)
 
-	// append some Conv2D-MaxPooling2D pairs with random parameters
-	numConvPaxPoolingPairs := 1 + rand.Intn(maxConvMaxPoolingPairs)
-	prevOutput := 3
-	finalResolution := struct{ width, height int }{inputWidth, inputHeight}
-	for i := 0; i < numConvPaxPoolingPairs; i++ {
-		convOutput := 1 + rand.Intn(maxConvOutput)
-		convHeight := 1 + rand.Intn(int(math.Min(maxConvKernelHeight, float64(finalResolution.height))))
-		convWidth := 1 + rand.Intn(int(math.Min(maxConvKernelWidth, float64(finalResolution.width))))
-		convActivation := activationFns[rand.Intn(len(activationFns))]
-		convPad := rand.Intn(maxConvPad + 1)
-		//convStride := 1 + rand.Intn(int(math.Min(
-		//	maxConvStride,
-		//	math.Min(float64(finalResolution.width), float64(finalResolution.height)),
-		//)))
-		finalResolution.width = (finalResolution.width - convWidth + 2*convPad) + 1
-		finalResolution.height = (finalResolution.height - convHeight + 2*convPad) + 1
-
-		poolHeight := 1 + rand.Intn(int(math.Min(maxPoolKernelHeight, float64(finalResolution.height))))
-		poolWidth := 1 + rand.Intn(int(math.Min(maxPoolKernelWidth, float64(finalResolution.width))))
-		poolPad := rand.Intn(maxPoolPad + 1)
-		//poolStride := 1 + rand.Intn(int(math.Min(
-		//	maxPoolStride,
-		//	math.Min(float64(finalResolution.width), float64(finalResolution.height)),
-		//)))
-		finalResolution.width = (finalResolution.width - poolWidth + 2*poolPad) + 1
-		finalResolution.height = (finalResolution.height - poolHeight + 2*poolPad) + 1
-
-		layers = append(layers,
-			layer.Conv2D{
-				Input:      prevOutput,
-				Output:     convOutput,
-				Height:     convHeight,
-				Width:      convWidth,
-				Activation: convActivation,
-				Pad:        []int{convPad, convPad},
-				//Stride:     []int{convStride, convStride},
-			},
-			layer.MaxPooling2D{
-				Kernel: []int{poolWidth, poolHeight},
-				Pad:    []int{poolPad, poolPad},
-				Stride: []int{1, 1},
-			},
-		)
-		prevOutput = convOutput
+	input := (individual.Sequential.X().Inputs()[0].Shape())[2:]
+	res := resolution{
+		width:  input[0],
+		height: input[1],
 	}
-	log.Println(finalResolution)
-	log.Println(prevOutput)
+	var newRes resolution
 
-	layers = append(layers, layer.Flatten{})
+	// mutate layers (basically replace with new random ones)
+	for i := 0; i < len(layers)-1; i++ {
+		if _, ok := layers[i].(layer.Flatten); ok {
+			continue
+		}
 
-	// append dense layers
-	numDenseLayers := 1 + rand.Intn(maxDenseLayers)
-	prevOutput = prevOutput * finalResolution.width * finalResolution.height
-	for i := 0; i < numDenseLayers; i++ {
-		denseSize := 1 + rand.Intn(maxDenseSize)
-		denseActivation := activationFns[rand.Intn(len(activationFns))]
-		layers = append(layers,
-			layer.FC{
-				Input:      prevOutput,
-				Output:     denseSize,
-				Activation: denseActivation,
-			},
-		)
-		prevOutput = denseSize
+		if rand.Float32() < mutationChance {
+			if _, ok := layers[i].(layer.Conv2D); ok {
+				prevOutput := 3
+				if i > 0 {
+					prevOutput = layers[i-2].(layer.Conv2D).Output
+				}
+				for {
+					conv2D := generateRandomConv2D(prevOutput, res)
+					if newRes = res.after(conv2D); !newRes.validate() {
+						continue
+					}
+					layers[i] = conv2D
+					// update input of next layer
+					if nextConv2D, ok := layers[i+2].(layer.Conv2D); ok {
+						nextConv2D.Input = conv2D.Output
+						layers[i+2] = nextConv2D
+					} else if nextFC, ok := layers[i+2].(layer.FC); ok {
+						newRes = newRes.after(layers[i+1].(layer.MaxPooling2D))
+						nextFC.Input = conv2D.Output * newRes.width * newRes.height
+						layers[i+2] = nextFC
+					}
+					break
+				}
+			} else if _, ok := layers[i].(layer.MaxPooling2D); ok {
+				maxPooling2D := generateRandomMaxPooling2D(res)
+				if newRes = res.after(maxPooling2D); !newRes.validate() {
+					continue
+				}
+				layers[i] = maxPooling2D
+				// update input of next layer if it is a dense layer
+				if nextFC, ok := layers[i+2].(layer.FC); ok {
+					nextFC.Input = layers[i-1].(layer.Conv2D).Output * newRes.width * newRes.height
+					layers[i+2] = nextFC
+				}
+			} else if fc, ok := layers[i].(layer.FC); ok {
+				layers[i] = generateRandomFC(fc.Input)
+				// update input of next dense layer
+				nextFC := layers[i+2].(layer.FC)
+				nextFC.Input = fc.Output
+				layers[i+2] = nextFC
+			}
+		}
 	}
-	// add last layer of size = num classes
-	denseActivation := activationFns[rand.Intn(len(activationFns))]
-	layers = append(layers,
-		layer.FC{
-			Input:      prevOutput,
-			Output:     numClasses,
-			Activation: denseActivation,
-		},
-	)
+	err := individual.Compile(individual.X(), individual.Y())
+	return err
+}
 
-	return
+// todo make a function that adds or deletes a layer (pair)
+
+func (individual *Individual) Crossover(other *Individual) {
+	// get slices of layers of both models
+	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
+	layersRight := make([]layer.Config, len(other.Chain.Layers))
+	copy(layersLeft, individual.Chain.Layers)
+	copy(layersRight, other.Chain.Layers)
+
+	// pick a random crossover point
+	crossoverPoint := rand.Intn(len(layersLeft))
+
+	// swap layers
+	for i := crossoverPoint; i < len(layersLeft); i++ {
+		layersLeft[i], layersRight[i] = layersRight[i], layersLeft[i]
+	}
+
+	// update inputs of layers at crossover point if they are Conv2D and not the first layers
+	if conv2D, ok := layersLeft[crossoverPoint].(layer.Conv2D); ok && crossoverPoint > 0 {
+		prevConv2D := layersLeft[crossoverPoint-2].(layer.Conv2D)
+		conv2D.Input = prevConv2D.Output
+		layersLeft[crossoverPoint] = conv2D
+
+		conv2D = layersRight[crossoverPoint].(layer.Conv2D)
+		prevConv2D = layersRight[crossoverPoint-2].(layer.Conv2D)
+		conv2D.Input = prevConv2D.Output
+		layersRight[crossoverPoint] = conv2D
+	}
 }

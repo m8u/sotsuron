@@ -53,11 +53,13 @@ func (a *App) DoStuff() {
 	//	layer.FC{Input: 10 * 7 * 7, Output: 10, Activation: layer.Softmax},
 	//)
 
+	// todo rand.Seed ломает goro? попробовать здесь с теми же параметрами
+
 	model.AddLayers(
-		layer.Conv2D{Input: 3, Output: 1, Width: 4, Height: 4, Pad: []int{2, 2}},       // W + 2P - (K-1) = 29, 29
-		layer.MaxPooling2D{Kernel: []int{3, 3}, Pad: []int{1, 1}, Stride: []int{1, 1}}, // = 31, 31
+		layer.Conv2D{Input: 3, Output: 2, Width: 2, Height: 2, Pad: []int{0, 0}}, // W + 2P - (K-1)
+		layer.MaxPooling2D{Kernel: []int{3, 3}, Pad: []int{2, 2}, Stride: []int{1, 1}},
 		layer.Flatten{},
-		layer.FC{Input: 1 * 29 * 29, Output: 10, Activation: layer.Softmax},
+		layer.FC{Input: 2 * 29 * 29, Output: 10, Activation: layer.Softmax},
 	)
 	optimizer := g.NewAdamSolver()
 	batchSize := 5
