@@ -5,7 +5,6 @@ import (
 	m "github.com/aunum/goro/pkg/v1/model"
 	"github.com/google/uuid"
 	"golang.org/x/exp/rand"
-	"log"
 	"sotsuron/internal/utils"
 )
 
@@ -27,7 +26,7 @@ const (
 	minResolutionWidth  = 3
 	minResolutionHeight = 3
 
-	mutationChance = 0.05
+	mutationChance = 0.1
 )
 
 var activationFns = []layer.ActivationFn{
@@ -47,7 +46,7 @@ func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individ
 	model, _ := m.NewSequential(uuid.New().String()) // TODO: specify metrics
 	model.AddLayers(generateRandomStructure(inputWidth, inputHeight, numClasses)...)
 	err := model.Compile(
-		m.NewInput("x", []int{1, 3, inputWidth, inputHeight}),
+		m.NewInput("x", []int{1, 3, inputHeight, inputWidth}),
 		m.NewInput("y", []int{1, numClasses}),
 	)
 	utils.MaybeCrash(err)
@@ -56,11 +55,10 @@ func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individ
 	return
 }
 
-func (individual *Individual) Mutate() error {
+func (individual *Individual) Mutate() error { // TODO: resolution.beforeMany я написал вчера чтобы вычислять ограничения на размеры слоев
 	// get a slice of layers of a model
 	layers := make([]layer.Config, len(individual.Chain.Layers))
 	copy(layers, individual.Chain.Layers)
-	log.Println(layers)
 
 	input := (individual.Sequential.X().Inputs()[0].Shape())[2:]
 	res := resolution{
@@ -70,12 +68,13 @@ func (individual *Individual) Mutate() error {
 	var newRes resolution
 
 	// mutate layers (basically replace with new random ones)
-	for i := 0; i < len(layers)-1; i++ {
+	for i := 0; i < len(layers)-2; i++ {
 		if _, ok := layers[i].(layer.Flatten); ok {
 			continue
 		}
 
 		if rand.Float32() < mutationChance {
+			println("----------------------------- mutating layer", i, "-----------------------------")
 			if _, ok := layers[i].(layer.Conv2D); ok {
 				prevOutput := 3
 				if i > 0 {
@@ -118,7 +117,12 @@ func (individual *Individual) Mutate() error {
 			}
 		}
 	}
-	err := individual.Compile(individual.X(), individual.Y())
+	// create new model with mutated layers
+	mutatedModel, _ := m.NewSequential(uuid.New().String())
+	mutatedModel.AddLayers(layers...)
+	err := mutatedModel.Compile(individual.X(), individual.Y())
+	individual.Sequential = mutatedModel
+
 	return err
 }
 

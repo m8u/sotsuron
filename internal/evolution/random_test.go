@@ -10,29 +10,28 @@ import (
 	"time"
 )
 
-type generateRandomStructureTest struct {
-	name       string
-	args       generateRandomStructureArgs
-	wantLayers []layer.Config
-}
-
-type generateRandomStructureArgs struct {
-	inputWidth  int
-	inputHeight int
-	numClasses  int
-}
-
 func Test_generateRandomStructure(t *testing.T) {
-	rand.Seed(uint64(time.Now().Unix()))
-	var tests []generateRandomStructureTest
+	rand.Seed(uint64(time.Now().UnixNano()))
+
+	type args struct {
+		inputWidth  int
+		inputHeight int
+		numClasses  int
+	}
+	type test struct {
+		name       string
+		args       args
+		wantLayers []layer.Config
+	}
+	var tests []test
 	for i := 0; i < 100; i++ {
 		inputWidth := 3 + rand.Intn(100)
 		inputHeight := 3 + rand.Intn(100)
 		numClasses := 2 + rand.Intn(20)
 		tests = append(tests,
-			generateRandomStructureTest{
+			test{
 				name: fmt.Sprintf("%dx%dx%d", numClasses, inputWidth, inputHeight),
-				args: generateRandomStructureArgs{
+				args: args{
 					inputWidth:  inputWidth,
 					inputHeight: inputHeight,
 					numClasses:  numClasses,

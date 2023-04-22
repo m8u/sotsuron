@@ -10,7 +10,7 @@ import (
 var assets embed.FS
 
 func main() {
-	rand.Seed(uint64(time.Now().Unix()))
+	rand.Seed(uint64(time.Now().UnixNano()))
 
 	// Create an instance of the app structure
 	app := NewApp()
