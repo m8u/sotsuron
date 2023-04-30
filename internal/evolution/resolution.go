@@ -1,12 +1,17 @@
 package evolution
 
 import (
+	"fmt"
 	"github.com/aunum/goro/pkg/v1/layer"
 	"gorgonia.org/tensor"
 )
 
 type resolution struct {
 	width, height int
+}
+
+func (res *resolution) String() string {
+	return fmt.Sprintf("%dx%d", res.width, res.height)
 }
 
 func (res *resolution) validate() bool {
@@ -55,12 +60,12 @@ func (res *resolution) before(config layer.Config) (resBefore resolution) {
 	return
 }
 
-func (res *resolution) calculateMinOutputResolution(layers []layer.Config) (minResolution resolution) {
-	minResolution = *res
+func (res *resolution) calculateMinRequiredBefore(layers []layer.Config) (minRes resolution) {
+	minRes = *res
 	for i := len(layers) - 1; i >= 0; i-- {
-		minResolution = minResolution.before(layers[i])
-		minResolution.width = tensor.MaxInt(minResolution.width, minResolutionWidth)
-		minResolution.height = tensor.MaxInt(minResolution.height, minResolutionHeight)
+		minRes = minRes.before(layers[i])
+		minRes.width = tensor.MaxInt(minRes.width, minResolutionWidth)
+		minRes.height = tensor.MaxInt(minRes.height, minResolutionHeight)
 	}
 	return
 }

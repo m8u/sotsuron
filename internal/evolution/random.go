@@ -1,12 +1,71 @@
 package evolution
 
 import (
+	"fmt"
 	"github.com/aunum/goro/pkg/v1/layer"
 	"golang.org/x/exp/rand"
 	"math"
 )
 
-func generateRandomConv2D(prevOutput int, imageRes resolution) layer.Conv2D {
+type NoValidConfigFound struct {
+	inputRes     resolution
+	minOutputRes resolution
+}
+
+func (err NoValidConfigFound) Error() string {
+	return fmt.Sprintf(
+		"could not find a valid config for inputRes = %s, minOutputRes = %s",
+		err.inputRes.String(), err.minOutputRes.String(),
+	)
+}
+
+// getValidRandomConfig returns a random valid Conv2D or MaxPooling2D config, or an error if none are found.
+func getValidRandomConfig(inputRes, minOutputRes resolution) (width, height, pad, stride int, err error) {
+	var validConfigs [][]int
+	for width = 2; width <= minOutputRes.width; width++ {
+		for height = 2; height <= minOutputRes.height; height++ {
+			for pad = 0; pad <= maxConvPad; pad++ {
+				for stride = 1; stride <= maxConvStride; stride++ {
+					outputRes := inputRes.after(layer.Conv2D{
+						Height: height,
+						Width:  width,
+						Pad:    squareShapeSlice(pad),
+						Stride: squareShapeSlice(stride),
+					})
+					if outputRes.width >= minOutputRes.width && outputRes.height >= minOutputRes.height {
+						validConfigs = append(validConfigs, []int{width, height, pad, stride})
+					}
+				}
+			}
+		}
+	}
+	if len(validConfigs) > 0 {
+		config := validConfigs[rand.Intn(len(validConfigs))]
+		return config[0], config[1], config[2], config[3], nil
+	}
+	return 0, 0, 0, 0, NoValidConfigFound{inputRes, minOutputRes}
+}
+
+func generateRandomConv2D(prevOutput int, imageRes resolution, layers ...layer.Config) (layer.Conv2D, error) {
+	if len(layers) > 0 {
+		minOutputRes := (&resolution{
+			minResolutionWidth,
+			minResolutionHeight,
+		}).calculateMinRequiredBefore(layers)
+		width, height, pad, stride, err := getValidRandomConfig(imageRes, minOutputRes)
+		if err != nil {
+			return layer.Conv2D{}, err
+		}
+		return layer.Conv2D{
+			Input:      prevOutput,
+			Output:     1 + rand.Intn(maxConvOutput),
+			Height:     height,
+			Width:      width,
+			Activation: activationFns[rand.Intn(len(activationFns))],
+			Pad:        squareShapeSlice(pad),
+			Stride:     squareShapeSlice(stride),
+		}, nil
+	}
 	return layer.Conv2D{
 		Input:      prevOutput,
 		Output:     1 + rand.Intn(maxConvOutput),
@@ -18,10 +77,29 @@ func generateRandomConv2D(prevOutput int, imageRes resolution) layer.Conv2D {
 			maxConvStride,
 			math.Min(float64(imageRes.width), float64(imageRes.height))-1,
 		)))),
-	}
+	}, nil
 }
 
-func generateRandomMaxPooling2D(imageRes resolution) layer.MaxPooling2D {
+func generateRandomMaxPooling2D(imageRes resolution, layers ...layer.Config) (layer.MaxPooling2D, error) {
+	if len(layers) > 0 {
+		minOutputRes := (&resolution{
+			minResolutionWidth,
+			minResolutionHeight,
+		}).calculateMinRequiredBefore(layers)
+		width, height, pad, stride, err := getValidRandomConfig(imageRes, minOutputRes)
+		if err != nil {
+			return layer.MaxPooling2D{}, err
+		}
+		return layer.MaxPooling2D{
+			Kernel: []int{
+				height,
+				width,
+			},
+			Pad:    squareShapeSlice(pad),
+			Stride: squareShapeSlice(stride),
+		}, nil
+	}
+
 	return layer.MaxPooling2D{
 		Kernel: []int{
 			2 + rand.Intn(int(math.Min(maxPoolKernelSize-1, float64(imageRes.height-2)))),
@@ -32,7 +110,7 @@ func generateRandomMaxPooling2D(imageRes resolution) layer.MaxPooling2D {
 			maxPoolStride,
 			math.Min(float64(imageRes.width), float64(imageRes.height))-1,
 		)))),
-	}
+	}, nil
 }
 
 func generateRandomFC(prevOutput int) layer.FC {
@@ -50,13 +128,13 @@ func generateRandomStructure(inputWidth, inputHeight, numClasses int) (layers []
 	res := resolution{inputWidth, inputHeight}
 	var newRes resolution
 	for i := 0; i < numConvPaxPoolingPairs; i++ {
-		conv2D := generateRandomConv2D(prevOutput, res)
+		conv2D, _ := generateRandomConv2D(prevOutput, res)
 		if newRes = res.after(conv2D); !newRes.validate() {
 			break
 		}
 		//fmt.Println(conv2D)
 
-		maxPooling2D := generateRandomMaxPooling2D(newRes)
+		maxPooling2D, _ := generateRandomMaxPooling2D(newRes)
 		if newRes = newRes.after(maxPooling2D); !newRes.validate() {
 			break
 		}

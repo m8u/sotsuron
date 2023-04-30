@@ -131,7 +131,7 @@ func Test_resolution_before(t *testing.T) {
 			width:  3 + rand.Intn(100),
 			height: 3 + rand.Intn(100),
 		}
-		conv2D := generateRandomConv2D(10, res)
+		conv2D, _ := generateRandomConv2D(10, res)
 		resAfter := res.after(conv2D)
 		tests = append(tests, test{
 			name:          "conv2d",
@@ -144,7 +144,7 @@ func Test_resolution_before(t *testing.T) {
 			width:  3 + rand.Intn(100),
 			height: 3 + rand.Intn(100),
 		}
-		maxPooling2D := generateRandomMaxPooling2D(res)
+		maxPooling2D, _ := generateRandomMaxPooling2D(res)
 		resAfter = res.after(maxPooling2D)
 		tests = append(tests, test{
 			name:          "maxpooling2d",
@@ -163,8 +163,8 @@ func Test_resolution_before(t *testing.T) {
 }
 
 func Test_resolution_beforeMany(t *testing.T) {
-	//rand.Seed(uint64(time.Now().UnixNano()))
-	rand.Seed(0)
+	rand.Seed(uint64(time.Now().UnixNano()))
+
 	type args struct {
 		layers []layer.Config
 	}
@@ -178,12 +178,12 @@ func Test_resolution_beforeMany(t *testing.T) {
 		inputWidth := 3 + rand.Intn(100)
 		inputHeight := 3 + rand.Intn(100)
 		var layers []layer.Config
-	tryGenerateWhileHasNoConv2D:
+	generateUntilHasConv2D:
 		for {
 			layers = generateRandomStructure(inputWidth, inputHeight, 2)
 			for _, l := range layers {
 				if _, ok := l.(layer.Conv2D); ok {
-					break tryGenerateWhileHasNoConv2D
+					break generateUntilHasConv2D
 				}
 			}
 		}
@@ -199,7 +199,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 				fmt.Println(l)
 			}
 			fmt.Println("...")
-			minResolution := (&resolution{3, 3}).calculateMinOutputResolution(tt.args.layers)
+			minResolution := (&resolution{3, 3}).calculateMinRequiredBefore(tt.args.layers)
 			fmt.Println(minResolution)
 
 			for i, l := range tt.args.layers {
