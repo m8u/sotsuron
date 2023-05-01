@@ -11,23 +11,6 @@ import (
 )
 
 const (
-	maxConvMaxPoolingPairs = 3
-
-	maxConvOutput     = 16
-	maxConvKernelSize = 16
-	maxConvPad        = 2
-	maxConvStride     = 1
-
-	maxPoolKernelSize = 16
-	maxPoolPad        = 2
-	maxPoolStride     = 1
-
-	maxDenseLayers = 3
-	maxDenseSize   = 1024
-
-	minResolutionWidth  = 3
-	minResolutionHeight = 3
-
 	mutationChance = 0.3
 )
 
@@ -138,75 +121,6 @@ func (err *CrossoverFailedError) Error() string {
 }
 
 func (individual *Individual) Crossover(other *Individual) (child1, child2 *Individual, err1, err2 error) {
-	// get slices of layers of both models
-	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
-	layersRight := make([]layer.Config, len(other.Chain.Layers))
-	copy(layersLeft, individual.Chain.Layers)
-	copy(layersRight, other.Chain.Layers)
-
-	// pick a random crossover point within the left model
-	crossoverPointLeft := rand.Intn(len(layersLeft))
-
-	// MaxPooling2D <-> MaxPooling2D - OK
-	// MaxPooling2D <-> Conv2D - OK
-	// MaxPooling2D <-> Flatten - OK
-	// MaxPooling2D <-> FC - ILLEGAL
-	// Conv2D <-> Conv2D - OK
-	// Conv2D <-> Flatten - OK
-	// Conv2D <-> FC - ILLEGAL
-	// Flatten <-> Flatten - OK
-	// Flatten <-> FC - ILLEGAL
-	// FC <-> FC - OK
-	// pick a random crossover point within the right model, but avoid illegal crossovers
-	crossoverPointRight := rand.Intn(len(layersRight))
-	for { // TODO: make it less stupid
-		if _, ok := layersLeft[crossoverPointLeft].(layer.MaxPooling2D); ok {
-			if _, ok := layersRight[crossoverPointRight].(layer.MaxPooling2D); ok {
-				break
-			} else if _, ok := layersRight[crossoverPointRight].(layer.Conv2D); ok {
-				break
-			} else if _, ok := layersRight[crossoverPointRight].(layer.Flatten); ok {
-				break
-			}
-		} else if _, ok := layersLeft[crossoverPointLeft].(layer.Conv2D); ok {
-			if _, ok := layersRight[crossoverPointRight].(layer.Conv2D); ok {
-				break
-			} else if _, ok := layersRight[crossoverPointRight].(layer.Flatten); ok {
-				break
-			}
-		} else if _, ok := layersLeft[crossoverPointLeft].(layer.Flatten); ok {
-			if _, ok := layersRight[crossoverPointRight].(layer.Flatten); ok {
-				break
-			}
-		} else if _, ok := layersLeft[crossoverPointLeft].(layer.FC); ok {
-			if _, ok := layersRight[crossoverPointRight].(layer.FC); ok {
-				break
-			}
-		}
-		crossoverPointRight = rand.Intn(len(layersRight))
-	}
-
-	// swap layers
-	glass := make([]layer.Config, len(layersLeft))
-	copy(glass, layersLeft)
-	layersLeft, layersRight =
-		append(layersLeft[:crossoverPointLeft], layersRight[crossoverPointRight:]...),
-		append(layersRight[:crossoverPointRight], glass[crossoverPointLeft:]...)
-
-	getPrevOutput := func(layers []layer.Config, startIndex int) int {
-		lastConv2DIndex := startIndex
-		for i := startIndex - 1; i >= 0; i-- {
-			if _, ok := layers[i].(layer.Conv2D); ok {
-				lastConv2DIndex = i
-				break
-			}
-		}
-		if lastConv2DIndex == startIndex {
-			return 3
-		}
-		return layers[lastConv2DIndex].(layer.Conv2D).Output
-	}
-
 	findFirstFCIndex := func(layers []layer.Config) int {
 		firstFCIndex := len(layers) - 1
 		for ; ; firstFCIndex-- {
@@ -229,6 +143,46 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 			return -1
 		}
 		return nextConv2DIndex
+	}
+
+	// get slices of layers of both models
+	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
+	layersRight := make([]layer.Config, len(other.Chain.Layers))
+	copy(layersLeft, individual.Chain.Layers)
+	copy(layersRight, other.Chain.Layers)
+
+	// pick a random crossover point within the left model
+	crossoverPointLeft := rand.Intn(len(layersLeft))
+
+	// pick a random crossover point within the right model, but avoid illegal crossovers
+	var crossoverPointRight int
+	firstFCIndex := findFirstFCIndex(layersRight)
+	if _, ok := layersLeft[crossoverPointLeft].(layer.Flatten); ok {
+		crossoverPointRight = firstFCIndex - 1
+	} else if _, ok := layersLeft[crossoverPointLeft].(layer.FC); ok {
+		crossoverPointRight = firstFCIndex + rand.Intn(len(layersRight)-firstFCIndex)
+	} else {
+		crossoverPointRight = rand.Intn(firstFCIndex)
+	}
+	// swap layers
+	glass := make([]layer.Config, len(layersLeft))
+	copy(glass, layersLeft)
+	layersLeft, layersRight =
+		append(layersLeft[:crossoverPointLeft], layersRight[crossoverPointRight:]...),
+		append(layersRight[:crossoverPointRight], glass[crossoverPointLeft:]...)
+
+	getPrevOutput := func(layers []layer.Config, startIndex int) int {
+		lastConv2DIndex := startIndex
+		for i := startIndex - 1; i >= 0; i-- {
+			if _, ok := layers[i].(layer.Conv2D); ok {
+				lastConv2DIndex = i
+				break
+			}
+		}
+		if lastConv2DIndex == startIndex {
+			return 3
+		}
+		return layers[lastConv2DIndex].(layer.Conv2D).Output
 	}
 
 	// update inputs of layers at crossover points

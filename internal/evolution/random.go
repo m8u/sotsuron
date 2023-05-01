@@ -7,6 +7,25 @@ import (
 	"math"
 )
 
+const (
+	maxConvMaxPoolingPairs = 3
+
+	maxConvOutput     = 16
+	maxConvKernelSize = 16
+	maxConvPad        = 2
+	maxConvStride     = 1
+
+	maxPoolKernelSize = 16
+	maxPoolPad        = 2
+	maxPoolStride     = 1
+
+	maxDenseLayers = 3
+	maxDenseSize   = 1024
+
+	minResolutionWidth  = 3
+	minResolutionHeight = 3
+)
+
 type NoValidConfigFound struct {
 	inputRes     resolution
 	minOutputRes resolution
