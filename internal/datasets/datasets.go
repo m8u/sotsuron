@@ -45,7 +45,7 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 	// load images and labels
 	for i, class := range classes {
 		className := class.Name()
-		log.Println(className)
+		//log.Println(className)
 		classPath := fmt.Sprintf("%s/%s", path, className)
 		entities, err := os.ReadDir(classPath)
 		require.NoError(err)

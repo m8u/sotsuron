@@ -3,14 +3,19 @@ package evolution
 import (
 	"errors"
 	"fmt"
+	"github.com/aunum/gold/pkg/v1/common/num"
+	"github.com/aunum/gold/pkg/v1/dense"
 	"github.com/aunum/goro/pkg/v1/layer"
 	m "github.com/aunum/goro/pkg/v1/model"
+	"github.com/aunum/log"
 	"github.com/google/uuid"
 	"golang.org/x/exp/rand"
+	"gorgonia.org/tensor"
 	"sotsuron/internal/utils"
 )
 
 const (
+	batchSize      = 100
 	mutationChance = 0.3
 )
 
@@ -24,20 +29,129 @@ var activationFns = []layer.ActivationFn{
 }
 
 type Individual struct {
+	name string
 	*m.Sequential
+	inputRes   resolution
+	numClasses int
+	fitness    float32
 }
 
 func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individual) {
-	model, _ := m.NewSequential(uuid.New().String()) // TODO: specify metrics
+	name := uuid.New().String()
+	model, _ := m.NewSequential(name) // TODO: specify metrics
 	model.AddLayers(generateRandomStructure(inputWidth, inputHeight, numClasses)...)
 	err := model.Compile(
 		m.NewInput("x", []int{1, 3, inputHeight, inputWidth}),
 		m.NewInput("y", []int{1, numClasses}),
+		m.WithBatchSize(batchSize),
 	)
 	utils.MaybeCrash(err)
-	individual = &Individual{model}
-
+	individual = &Individual{
+		name:       name,
+		Sequential: model,
+		inputRes:   resolution{inputWidth, inputHeight},
+		numClasses: numClasses,
+	}
 	return
+}
+
+func (individual *Individual) evaluate(x, y tensor.Tensor, batchSize int) (accuracy, loss float32, err error) {
+	exampleSize := x.Shape()[0]
+	batches := exampleSize / batchSize
+	var accuracies []float32
+	for batch := 0; batch < batches; batch++ {
+		start := batch * batchSize
+		end := start + batchSize
+		if start >= exampleSize {
+			break
+		}
+		if end > exampleSize {
+			end = exampleSize
+		}
+
+		xi, err := x.Slice(dense.MakeRangedSlice(start, end))
+		utils.MaybeCrash(err)
+		err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width) // TODO: this
+		utils.MaybeCrash(err)
+
+		yi, err := y.Slice(dense.MakeRangedSlice(start, end))
+		utils.MaybeCrash(err)
+		err = yi.Reshape(batchSize, individual.numClasses)
+		utils.MaybeCrash(err)
+
+		yHat, err := individual.PredictBatch(xi)
+		utils.MaybeCrash(err)
+
+		acc, err := calculateAccuracy(yHat.(*tensor.Dense), yi.(*tensor.Dense))
+		utils.MaybeCrash(err)
+		accuracies = append(accuracies, acc)
+	}
+	lossVal, err := individual.Tracker.GetValue(fmt.Sprintf("%s_train_batch_loss", individual.name))
+	utils.MaybeCrash(err)
+	loss = float32(lossVal.Scalar())
+	accuracy = num.Mean(accuracies)
+	return
+}
+
+func calculateAccuracy(yHat, y tensor.Tensor) (accuracy float32, err error) {
+	yMax, err := y.(*tensor.Dense).Argmax(1)
+	utils.MaybeCrash(err)
+
+	yHatMax, err := yHat.(*tensor.Dense).Argmax(1)
+	utils.MaybeCrash(err)
+
+	eq, err := tensor.ElEq(yMax, yHatMax, tensor.AsSameType())
+	utils.MaybeCrash(err)
+	eqd := eq.(*tensor.Dense)
+
+	numTrue, err := eqd.Sum()
+	if err != nil {
+		return 0, err
+	}
+
+	return float32(numTrue.Data().(int)) / float32(eqd.Len()), nil
+}
+
+func (individual *Individual) CalculateFitness(xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
+	epochs := 10
+	exampleSize := xTrain.Shape()[0]
+	batches := exampleSize / batchSize
+
+	var accuracy, loss float32
+
+	log.Infov("epochs", epochs)
+	for epoch := 0; epoch < epochs; epoch++ {
+		for batch := 0; batch < batches; batch++ {
+			start := batch * batchSize
+			end := start + batchSize
+			if start >= exampleSize {
+				break
+			}
+			if end > exampleSize {
+				end = exampleSize
+			}
+
+			xi, err := xTrain.Slice(dense.MakeRangedSlice(start, end))
+			utils.MaybeCrash(err)                                                                 // todo maybe replace with return
+			err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width) // TODO: this
+			utils.MaybeCrash(err)
+
+			yi, err := yTrain.Slice(dense.MakeRangedSlice(start, end))
+			utils.MaybeCrash(err)
+			err = yi.Reshape(batchSize, individual.numClasses)
+			utils.MaybeCrash(err)
+
+			err = individual.FitBatch(xi, yi)
+			utils.MaybeCrash(err)
+			err = individual.Tracker.LogStep(epoch, batch)
+			utils.MaybeCrash(err)
+		}
+		accuracy, loss, err = individual.evaluate(xTest, yTest, batchSize)
+		utils.MaybeCrash(err)
+		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
+	}
+	err = individual.Tracker.Clear()
+	return accuracy + 1/loss, err
 }
 
 func (individual *Individual) Mutate() error {
@@ -104,20 +218,18 @@ func (individual *Individual) Mutate() error {
 	// create new model with mutated layers
 	mutatedModel, _ := m.NewSequential(uuid.New().String())
 	mutatedModel.AddLayers(layers...)
-	err := mutatedModel.Compile(individual.X(), individual.Y())
+	err := mutatedModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
 	individual.Sequential = mutatedModel
 
 	return err
 }
 
-// todo make a function that adds or deletes a layer (pair)
-
 type CrossoverFailedError struct {
-	r any
+	recoverData any
 }
 
 func (err *CrossoverFailedError) Error() string {
-	return fmt.Sprintf("crossover failed: %v", err.r)
+	return fmt.Sprintf("crossover failed: %v", err.recoverData)
 }
 
 func (individual *Individual) Crossover(other *Individual) (child1, child2 *Individual, err1, err2 error) {
@@ -233,14 +345,27 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 	}()
 
 	// create new models with swapped layers
-	child1Model, _ := m.NewSequential(uuid.New().String())
+	child1Name := uuid.New().String()
+	child1Model, _ := m.NewSequential(child1Name)
 	child1Model.AddLayers(layersLeft...)
-	child2Model, _ := m.NewSequential(uuid.New().String())
+	child2Name := uuid.New().String()
+	child2Model, _ := m.NewSequential(child2Name)
 	child2Model.AddLayers(layersRight...)
 
 	// compile models
-	err1 = child1Model.Compile(individual.X(), individual.Y())
-	err2 = child2Model.Compile(individual.X(), individual.Y())
+	err1 = child1Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
+	err2 = child2Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
 
-	return &Individual{child1Model}, &Individual{child2Model}, err1, err2
+	return &Individual{
+			name:       child1Name,
+			Sequential: child1Model,
+			inputRes:   individual.inputRes,
+			numClasses: individual.numClasses,
+		}, &Individual{
+			name:       child2Name,
+			Sequential: child2Model,
+			inputRes:   individual.inputRes,
+			numClasses: individual.numClasses,
+		},
+		err1, err2
 }

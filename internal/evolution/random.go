@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maxConvMaxPoolingPairs = 3
+	maxConvMaxPoolingPairs = 2
 
 	maxConvOutput     = 16
 	maxConvKernelSize = 16
@@ -19,7 +19,7 @@ const (
 	maxPoolPad        = 2
 	maxPoolStride     = 1
 
-	maxDenseLayers = 3
+	maxDenseLayers = 2
 	maxDenseSize   = 1024
 
 	minResolutionWidth  = 3
