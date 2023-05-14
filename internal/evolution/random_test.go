@@ -2,8 +2,8 @@ package evolution
 
 import (
 	"fmt"
-	"github.com/aunum/goro/pkg/v1/layer"
-	m "github.com/aunum/goro/pkg/v1/model"
+	"github.com/m8u/goro/pkg/v1/layer"
+	m "github.com/m8u/goro/pkg/v1/model"
 	"golang.org/x/exp/rand"
 	"sotsuron/internal/utils"
 	"testing"
@@ -41,7 +41,7 @@ func Test_generateRandomStructure(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+			//t.Parallel()
 			layers := generateRandomStructure(tt.args.inputWidth, tt.args.inputHeight, tt.args.numClasses)
 			model, err := m.NewSequential("")
 			utils.MaybeCrash(err)

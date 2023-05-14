@@ -2,8 +2,8 @@ package evolution
 
 import (
 	"fmt"
-	"github.com/aunum/goro/pkg/v1/layer"
-	m "github.com/aunum/goro/pkg/v1/model"
+	"github.com/m8u/goro/pkg/v1/layer"
+	m "github.com/m8u/goro/pkg/v1/model"
 	"golang.org/x/exp/rand"
 	"reflect"
 	"testing"

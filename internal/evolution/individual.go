@@ -3,37 +3,27 @@ package evolution
 import (
 	"errors"
 	"fmt"
-	"github.com/aunum/gold/pkg/v1/common/num"
-	"github.com/aunum/gold/pkg/v1/dense"
-	"github.com/aunum/goro/pkg/v1/layer"
-	m "github.com/aunum/goro/pkg/v1/model"
-	"github.com/aunum/log"
 	"github.com/google/uuid"
+	"github.com/m8u/gold/pkg/v1/common/num"
+	"github.com/m8u/gold/pkg/v1/dense"
+	"github.com/m8u/goro/pkg/v1/layer"
+	m "github.com/m8u/goro/pkg/v1/model"
 	"golang.org/x/exp/rand"
 	"gorgonia.org/tensor"
 	"sotsuron/internal/utils"
 )
 
 const (
-	batchSize      = 100
-	mutationChance = 0.3
+	batchSize      = 10
+	mutationChance = 1.0
 )
-
-var activationFns = []layer.ActivationFn{
-	layer.Linear,
-	layer.Sigmoid,
-	//layer.Softmax,
-	layer.Tanh,
-	layer.ReLU,
-	layer.LeakyReLU,
-}
 
 type Individual struct {
 	name string
 	*m.Sequential
 	inputRes   resolution
 	numClasses int
-	fitness    float32
+	fitness    chan float32
 }
 
 func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individual) {
@@ -51,11 +41,12 @@ func NewIndividual(inputWidth, inputHeight, numClasses int) (individual *Individ
 		Sequential: model,
 		inputRes:   resolution{inputWidth, inputHeight},
 		numClasses: numClasses,
+		fitness:    make(chan float32, 1),
 	}
 	return
 }
 
-func (individual *Individual) evaluate(x, y tensor.Tensor, batchSize int) (accuracy, loss float32, err error) {
+func (individual *Individual) evaluateBatch(x, y tensor.Tensor, batchSize int) (accuracy, loss float32, err error) {
 	exampleSize := x.Shape()[0]
 	batches := exampleSize / batchSize
 	var accuracies []float32
@@ -71,7 +62,7 @@ func (individual *Individual) evaluate(x, y tensor.Tensor, batchSize int) (accur
 
 		xi, err := x.Slice(dense.MakeRangedSlice(start, end))
 		utils.MaybeCrash(err)
-		err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width) // TODO: this
+		err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width)
 		utils.MaybeCrash(err)
 
 		yi, err := y.Slice(dense.MakeRangedSlice(start, end))
@@ -112,14 +103,13 @@ func calculateAccuracy(yHat, y tensor.Tensor) (accuracy float32, err error) {
 	return float32(numTrue.Data().(int)) / float32(eqd.Len()), nil
 }
 
-func (individual *Individual) CalculateFitness(xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
+func (individual *Individual) CalculateFitnessBatch(xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
 	epochs := 10
 	exampleSize := xTrain.Shape()[0]
 	batches := exampleSize / batchSize
 
 	var accuracy, loss float32
 
-	log.Infov("epochs", epochs)
 	for epoch := 0; epoch < epochs; epoch++ {
 		for batch := 0; batch < batches; batch++ {
 			start := batch * batchSize
@@ -132,8 +122,8 @@ func (individual *Individual) CalculateFitness(xTrain, yTrain, xTest, yTest tens
 			}
 
 			xi, err := xTrain.Slice(dense.MakeRangedSlice(start, end))
-			utils.MaybeCrash(err)                                                                 // todo maybe replace with return
-			err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width) // TODO: this
+			utils.MaybeCrash(err) // todo maybe replace with return
+			err = xi.Reshape(batchSize, 3, individual.inputRes.height, individual.inputRes.width)
 			utils.MaybeCrash(err)
 
 			yi, err := yTrain.Slice(dense.MakeRangedSlice(start, end))
@@ -142,11 +132,13 @@ func (individual *Individual) CalculateFitness(xTrain, yTrain, xTest, yTest tens
 			utils.MaybeCrash(err)
 
 			err = individual.FitBatch(xi, yi)
-			utils.MaybeCrash(err)
+			if err != nil {
+				return -1, err
+			}
 			err = individual.Tracker.LogStep(epoch, batch)
 			utils.MaybeCrash(err)
 		}
-		accuracy, loss, err = individual.evaluate(xTest, yTest, batchSize)
+		accuracy, loss, err = individual.evaluateBatch(xTest, yTest, batchSize)
 		utils.MaybeCrash(err)
 		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
 	}
@@ -154,7 +146,45 @@ func (individual *Individual) CalculateFitness(xTrain, yTrain, xTest, yTest tens
 	return accuracy + 1/loss, err
 }
 
-func (individual *Individual) Mutate() error {
+func getPrevOutput(layers []layer.Config, startIndex int) int {
+	lastConv2DIndex := startIndex
+	for i := startIndex - 1; i >= 0; i-- {
+		if _, ok := layers[i].(layer.Conv2D); ok {
+			lastConv2DIndex = i
+			break
+		}
+	}
+	if lastConv2DIndex == startIndex {
+		return 3
+	}
+	return layers[lastConv2DIndex].(layer.Conv2D).Output
+}
+
+func findFirstFCIndex(layers []layer.Config) int {
+	firstFCIndex := len(layers) - 1
+	for ; ; firstFCIndex-- {
+		if _, ok := layers[firstFCIndex-1].(layer.Flatten); ok {
+			return firstFCIndex
+		}
+	}
+}
+
+func findNextConv2DIndex(layers []layer.Config, startIndex int) int {
+	nextConv2DIndex := startIndex
+	firstFCIndex := findFirstFCIndex(layers)
+	for i := startIndex + 1; i < firstFCIndex; i++ {
+		if _, ok := layers[i].(layer.Conv2D); ok {
+			nextConv2DIndex = i
+			break
+		}
+	}
+	if nextConv2DIndex == startIndex {
+		return -1
+	}
+	return nextConv2DIndex
+}
+
+func (individual *Individual) Mutate() (mutated *Individual, err error) {
 	// get a slice of layers of a model
 	layers := make([]layer.Config, len(individual.Chain.Layers))
 	copy(layers, individual.Chain.Layers)
@@ -170,36 +200,31 @@ func (individual *Individual) Mutate() error {
 		if _, ok := layers[i].(layer.Flatten); ok {
 			continue
 		}
-		// don't forget to update the 1st dense layer regardless of mutationChance
-		if fc, ok := layers[i].(layer.FC); ok && i >= 3 {
-			if conv2D, ok := layers[i-3].(layer.Conv2D); ok {
-				fc.Input = conv2D.Output * res.width * res.height
-				layers[i] = fc
-			}
-		}
 
 		if rand.Float32() < mutationChance {
-			println("----------------------------- mutating layer", i, "-----------------------------")
+			//println("----------------------------- mutating layer", i, "-----------------------------")
 			if _, ok := layers[i].(layer.Conv2D); ok {
 				prevOutput := 3
 				if i > 0 {
-					prevOutput = layers[i-2].(layer.Conv2D).Output
+					prevOutput = getPrevOutput(layers, i)
 				}
 				conv2D, err := generateRandomConv2D(prevOutput, res, layers[i+1:]...)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				layers[i] = conv2D
 				// update input of next Conv2D layer, if any
-				if nextConv2D, ok := layers[i+2].(layer.Conv2D); ok {
+				nextConv2DIndex := findNextConv2DIndex(layers, i)
+				if nextConv2DIndex > -1 {
+					nextConv2D := layers[nextConv2DIndex].(layer.Conv2D)
 					nextConv2D.Input = conv2D.Output
-					layers[i+2] = nextConv2D
+					layers[nextConv2DIndex] = nextConv2D
 				}
 				res = res.after(conv2D)
 			} else if _, ok := layers[i].(layer.MaxPooling2D); ok {
 				maxPooling2D, err := generateRandomMaxPooling2D(res, layers[i+1:]...)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				layers[i] = maxPooling2D
 				res = res.after(maxPooling2D)
@@ -215,17 +240,34 @@ func (individual *Individual) Mutate() error {
 			res = res.after(layers[i])
 		}
 	}
-	// create new model with mutated layers
-	mutatedModel, _ := m.NewSequential(uuid.New().String())
-	mutatedModel.AddLayers(layers...)
-	err := mutatedModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
-	individual.Sequential = mutatedModel
+	// update input of first FC layer
+	firstFCIndex := findFirstFCIndex(layers)
+	firstFC := layers[firstFCIndex].(layer.FC)
+	prevOutput := getPrevOutput(layers, firstFCIndex)
+	firstFC.Input = prevOutput * res.width * res.height
+	layers[firstFCIndex] = firstFC
 
-	return err
+	// create new model with mutated layers
+	name := uuid.New().String()
+	newModel, _ := m.NewSequential(name)
+	// print layers
+	//for _, l := range layers {
+	//	fmt.Printf("%v\n", l)
+	//}
+	newModel.AddLayers(layers...)
+	err = newModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
+	mutated = &Individual{
+		name:       name,
+		Sequential: newModel,
+		inputRes:   individual.inputRes,
+		numClasses: individual.numClasses,
+		fitness:    make(chan float32, 1),
+	}
+	return
 }
 
 type CrossoverFailedError struct {
-	recoverData any
+	recoverData interface{}
 }
 
 func (err *CrossoverFailedError) Error() string {
@@ -233,30 +275,6 @@ func (err *CrossoverFailedError) Error() string {
 }
 
 func (individual *Individual) Crossover(other *Individual) (child1, child2 *Individual, err1, err2 error) {
-	findFirstFCIndex := func(layers []layer.Config) int {
-		firstFCIndex := len(layers) - 1
-		for ; ; firstFCIndex-- {
-			if _, ok := layers[firstFCIndex-1].(layer.Flatten); ok {
-				return firstFCIndex
-			}
-		}
-	}
-
-	findNextConv2DIndex := func(layers []layer.Config, startIndex int) int {
-		nextConv2DIndex := startIndex
-		firstFCIndex := findFirstFCIndex(layers)
-		for i := startIndex + 1; i < firstFCIndex; i++ {
-			if _, ok := layers[i].(layer.Conv2D); ok {
-				nextConv2DIndex = i
-				break
-			}
-		}
-		if nextConv2DIndex == startIndex {
-			return -1
-		}
-		return nextConv2DIndex
-	}
-
 	// get slices of layers of both models
 	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
 	layersRight := make([]layer.Config, len(other.Chain.Layers))
@@ -282,20 +300,6 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 	layersLeft, layersRight =
 		append(layersLeft[:crossoverPointLeft], layersRight[crossoverPointRight:]...),
 		append(layersRight[:crossoverPointRight], glass[crossoverPointLeft:]...)
-
-	getPrevOutput := func(layers []layer.Config, startIndex int) int {
-		lastConv2DIndex := startIndex
-		for i := startIndex - 1; i >= 0; i-- {
-			if _, ok := layers[i].(layer.Conv2D); ok {
-				lastConv2DIndex = i
-				break
-			}
-		}
-		if lastConv2DIndex == startIndex {
-			return 3
-		}
-		return layers[lastConv2DIndex].(layer.Conv2D).Output
-	}
 
 	// update inputs of layers at crossover points
 	updateInputs := func(layers []layer.Config, crossoverPoint int) error {
@@ -361,11 +365,13 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 			Sequential: child1Model,
 			inputRes:   individual.inputRes,
 			numClasses: individual.numClasses,
+			fitness:    make(chan float32, 1),
 		}, &Individual{
 			name:       child2Name,
 			Sequential: child2Model,
 			inputRes:   individual.inputRes,
 			numClasses: individual.numClasses,
+			fitness:    make(chan float32, 1),
 		},
 		err1, err2
 }

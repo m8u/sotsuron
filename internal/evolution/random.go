@@ -2,7 +2,7 @@ package evolution
 
 import (
 	"fmt"
-	"github.com/aunum/goro/pkg/v1/layer"
+	"github.com/m8u/goro/pkg/v1/layer"
 	"golang.org/x/exp/rand"
 	"math"
 )
@@ -20,11 +20,20 @@ const (
 	maxPoolStride     = 1
 
 	maxDenseLayers = 2
-	maxDenseSize   = 1024
+	maxDenseSize   = 256
 
 	minResolutionWidth  = 3
 	minResolutionHeight = 3
 )
+
+var activationFns = []layer.ActivationFn{
+	layer.Linear,
+	layer.Sigmoid,
+	//layer.Softmax,
+	layer.Tanh,
+	layer.ReLU,
+	layer.LeakyReLU,
+}
 
 type NoValidConfigFound struct {
 	inputRes     resolution
@@ -80,7 +89,7 @@ func generateRandomConv2D(prevOutput int, imageRes resolution, layers ...layer.C
 			Output:     1 + rand.Intn(maxConvOutput),
 			Height:     height,
 			Width:      width,
-			Activation: activationFns[rand.Intn(len(activationFns))],
+			Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
 			Pad:        squareShapeSlice(pad),
 			Stride:     squareShapeSlice(stride),
 		}, nil
@@ -90,7 +99,7 @@ func generateRandomConv2D(prevOutput int, imageRes resolution, layers ...layer.C
 		Output:     1 + rand.Intn(maxConvOutput),
 		Height:     2 + rand.Intn(int(math.Min(maxConvKernelSize-1, float64(imageRes.height-2)))),
 		Width:      2 + rand.Intn(int(math.Min(maxConvKernelSize-1, float64(imageRes.width-2)))),
-		Activation: activationFns[rand.Intn(len(activationFns))],
+		Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
 		Pad:        squareShapeSlice(rand.Intn(maxConvPad + 1)),
 		Stride: squareShapeSlice(1 + rand.Intn(int(math.Min(
 			maxConvStride,
@@ -136,7 +145,7 @@ func generateRandomFC(prevOutput int) layer.FC {
 	return layer.FC{
 		Input:      prevOutput,
 		Output:     1 + rand.Intn(maxDenseSize),
-		Activation: activationFns[rand.Intn(len(activationFns))],
+		Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
 	}
 }
 
@@ -151,15 +160,17 @@ func generateRandomStructure(inputWidth, inputHeight, numClasses int) (layers []
 		if newRes = res.after(conv2D); !newRes.validate() {
 			break
 		}
-		//fmt.Println(conv2D)
+		fmt.Println(conv2D)
+		fmt.Println(newRes.String())
 
 		maxPooling2D, _ := generateRandomMaxPooling2D(newRes)
 		if newRes = newRes.after(maxPooling2D); !newRes.validate() {
 			break
 		}
-		//fmt.Println(maxPooling2D)
+		fmt.Println(maxPooling2D)
+		fmt.Println(newRes.String())
+
 		res = newRes
-		//fmt.Println(res)
 
 		layers = append(layers,
 			conv2D,
@@ -176,17 +187,18 @@ func generateRandomStructure(inputWidth, inputHeight, numClasses int) (layers []
 	prevOutput = prevOutput * res.width * res.height
 	for i := 0; i < numDenseLayers; i++ {
 		fc := generateRandomFC(prevOutput)
-		//fmt.Printf("%v -> %v\n", prevOutput, fc.Output)
+		fmt.Printf("%v -> %v\n", prevOutput, fc.Output)
 		layers = append(layers, fc)
 		prevOutput = fc.Output
 	}
+	fmt.Printf("%v -> %v\n", prevOutput, numClasses)
 
 	// append last dense layer of size = num classes
 	layers = append(layers,
 		layer.FC{
 			Input:      prevOutput,
 			Output:     numClasses,
-			Activation: activationFns[rand.Intn(len(activationFns))],
+			Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
 		},
 	)
 

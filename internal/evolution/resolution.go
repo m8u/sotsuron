@@ -2,7 +2,7 @@ package evolution
 
 import (
 	"fmt"
-	"github.com/aunum/goro/pkg/v1/layer"
+	"github.com/m8u/goro/pkg/v1/layer"
 	"gorgonia.org/tensor"
 )
 

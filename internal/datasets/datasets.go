@@ -2,15 +2,15 @@ package datasets
 
 import (
 	"fmt"
-	"github.com/aunum/gold/pkg/v1/common/require"
+	"github.com/m8u/gold/pkg/v1/dense"
 	"golang.org/x/exp/rand"
-	"gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
 	"log"
 	"os"
+	"sotsuron/internal/utils"
 	"time"
 )
 
@@ -35,11 +35,11 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 	// take sample width & height
 	classPath := fmt.Sprintf("%s/%s", path, classes[0].Name())
 	entities, err := os.ReadDir(classPath)
-	require.NoError(err)
+	utils.MaybeCrash(err)
 	sampleFile, err := os.Open(fmt.Sprintf("%s/%s", classPath, entities[0].Name()))
-	require.NoError(err)
+	utils.MaybeCrash(err)
 	sampleImg, _, err := image.Decode(sampleFile)
-	require.NoError(err)
+	utils.MaybeCrash(err)
 	sampleWidth, sampleHeight = sampleImg.Bounds().Dx(), sampleImg.Bounds().Dy()
 
 	// load images and labels
@@ -48,21 +48,20 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 		//log.Println(className)
 		classPath := fmt.Sprintf("%s/%s", path, className)
 		entities, err := os.ReadDir(classPath)
-		require.NoError(err)
+		utils.MaybeCrash(err)
 		rows += len(entities)
 		dataset.classNames = append(dataset.classNames, className)
 		for _, entity := range entities {
 			file, err := os.Open(fmt.Sprintf("%s/%s", classPath, entity.Name()))
-			require.NoError(err)
+			utils.MaybeCrash(err)
 			img, _, err := image.Decode(file)
-			require.NoError(err)
+			utils.MaybeCrash(err)
 			images = append(images, img)
 			labels = append(labels, i)
 		}
 	}
 
 	// shuffle
-	rand.Seed(uint64(time.Now().UnixNano()))
 	rand.Shuffle(len(images), func(i, j int) {
 		images[i], images[j] = images[j], images[i]
 		labels[i], labels[j] = labels[j], labels[i]
@@ -97,19 +96,26 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 
 func (dataset *Dataset) SplitTrainTest(ratio float32) (xTrain, yTrain, xTest, yTest tensor.Tensor, err error) {
 	rows := dataset.x.Shape()[0]
-	xTrain, err = dataset.x.Slice(gorgonia.S(0, int(float32(rows)*ratio)))
+	//fmt.Printf(
+	//	"xTrain: (%v, %v)\nyTrain: (%v, %v)\nxTest: (%v, %v)\nyTest: (%v, %v)\n",
+	//	0, int(float32(rows)*ratio),
+	//	0, int(float32(rows)*ratio),
+	//	int(float32(rows)*ratio), rows,
+	//	int(float32(rows)*ratio), rows,
+	//)
+	xTrain, err = dataset.x.Slice(dense.MakeRangedSlice(0, int(float32(rows)*ratio)))
 	if err != nil {
 		return
 	}
-	yTrain, err = dataset.y.Slice(gorgonia.S(0, int(float32(rows)*ratio)))
+	yTrain, err = dataset.y.Slice(dense.MakeRangedSlice(0, int(float32(rows)*ratio)))
 	if err != nil {
 		return
 	}
-	xTest, err = dataset.x.Slice(gorgonia.S(int(float32(rows)*ratio), rows))
+	xTest, err = dataset.x.Slice(dense.MakeRangedSlice(int(float32(rows)*ratio), rows))
 	if err != nil {
 		return
 	}
-	yTest, err = dataset.y.Slice(gorgonia.S(int(float32(rows)*ratio), rows))
+	yTest, err = dataset.y.Slice(dense.MakeRangedSlice(int(float32(rows)*ratio), rows))
 	if err != nil {
 		return
 	}
