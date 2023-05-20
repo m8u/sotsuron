@@ -42,12 +42,12 @@ func Test_generateRandomStructure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			//t.Parallel()
-			layers := generateRandomStructure(tt.args.inputWidth, tt.args.inputHeight, tt.args.numClasses)
+			layers := generateRandomStructure(tt.args.inputWidth, tt.args.inputHeight, tt.args.numClasses, true)
 			model, err := m.NewSequential("")
 			utils.MaybeCrash(err)
 			model.AddLayers(layers...)
 			err = model.Compile(
-				m.NewInput("x", []int{1, 3, tt.args.inputHeight, tt.args.inputWidth}),
+				m.NewInput("x", []int{1, 1, tt.args.inputHeight, tt.args.inputWidth}),
 				m.NewInput("y", []int{1, tt.args.numClasses}),
 			)
 			if err != nil {

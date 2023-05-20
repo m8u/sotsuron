@@ -6,9 +6,46 @@
     <title>sotsuron</title>
 </head>
 <body>
-<div id="app">
-    <button onclick="doStuff()">do stuff</button>
-    <canvas id="mycanvas" width="200" height="100" ></canvas>
+<div class="text-center" id="app">
+    <div>
+        <canvas class="bg-info" id="my-canvas" width="100%" height="100%"></canvas>
+    </div>
+    <div class="row p-2 m-1 mt-0">
+        <fieldset class="col text-start border rounded-3 p-1 pt-0 pb-3">
+            <legend class="small float-none w-auto px-2">Датасет</legend>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="dataset-name" value="-">
+                <label for="dataset-name">Название</label>
+            </div>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="dataset-num-classes" value="-">
+                <label for="dataset-num-classes">Кол-во классов</label>
+            </div>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="dataset-num-images" value="-">
+                <label for="dataset-num-images">Кол-во изображений</label>
+            </div>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="dataset-num-channels" value="-">
+                <label for="dataset-num-channels">Кол-во каналов</label>
+            </div>
+            <div class="btn-group mt-2 ms-2" role="group">
+                <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    Загрузить как...
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" onclick="loadDataset(true)">Ч/Б</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="loadDataset(false)">RGB (медленнее)</a></li>
+                </ul>
+            </div>
+        </fieldset>
+        <div class="col">
+            <button class="btn btn-primary" onclick="">do stuff</button>
+        </div>
+        <div class="col">
+            <button class="btn btn-primary" onclick="">do stuff</button>
+        </div>
+    </div>
 </div>
 <script src="./src/main.js" type="module"></script>
 </body>

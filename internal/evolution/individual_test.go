@@ -35,7 +35,7 @@ func TestIndividual_Mutate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			//t.Parallel()
-			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses)
+			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
 			_, err := individual.Mutate()
 			if errors.As(err, &NoValidConfigFound{}) {
 				t.Skipf(err.Error())
@@ -47,12 +47,12 @@ func TestIndividual_Mutate(t *testing.T) {
 }
 
 func TestIndividual_Mutate_repeatedly(t *testing.T) {
-	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight")
+	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight", true)
 	utils.MaybeCrash(err)
 	xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
 	utils.MaybeCrash(err)
 
-	individual := NewIndividual(28, 28, 10)
+	individual := NewIndividual(28, 28, 10, true)
 	individual.CalculateFitnessBatch(xTrain, yTrain, xTest, yTest)
 	individual, _ = individual.Mutate()
 	individual.CalculateFitnessBatch(xTrain, yTrain, xTest, yTest)
@@ -82,8 +82,8 @@ func TestIndividual_Crossover(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses)
-			other := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses)
+			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
+			other := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
 			_, _, err1, err2 := individual.Crossover(other)
 			if err1 != nil || err2 != nil {
 				t.Skipf("could not crossover: child1 error: %v, child2 error: %v", err1, err2)
@@ -110,7 +110,7 @@ func TestIndividual_CalculateFitness(t *testing.T) {
 		wantErr bool
 	}
 	var tests []test
-	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight")
+	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight", true)
 	utils.MaybeCrash(err)
 	xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
 	utils.MaybeCrash(err)
@@ -134,14 +134,14 @@ func TestIndividual_CalculateFitness(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			//t.Parallel()
-			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses)
+			individual := NewIndividual(tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
 			gotFitness, err := individual.CalculateFitnessBatch(tt.args.xTrain, tt.args.yTrain, tt.args.xTest, tt.args.yTest)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CalculateFitnessBatch() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			fmt.Printf("\nCalculateFitnessBatch() gotFitness = %v\n", gotFitness)
-			img, err := datasets.LoadImage("/home/m8u/Downloads/two.png")
+			img, err := datasets.LoadImage("/home/m8u/Downloads/two.png", true)
 			utils.MaybeCrash(err)
 			pred, err := individual.Predict(img)
 			utils.MaybeCrash(err)

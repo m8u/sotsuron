@@ -180,7 +180,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 		var layers []layer.Config
 	generateUntilHasConv2D:
 		for {
-			layers = generateRandomStructure(inputWidth, inputHeight, 2)
+			layers = generateRandomStructure(inputWidth, inputHeight, 2, true)
 			for _, l := range layers {
 				if _, ok := l.(layer.Conv2D); ok {
 					break generateUntilHasConv2D
@@ -215,7 +215,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 			model, _ := m.NewSequential("")
 			model.AddLayers(tt.args.layers...)
 			err := model.Compile(
-				m.NewInput("x", []int{1, 3, minResolution.height, minResolution.width}),
+				m.NewInput("x", []int{1, 1, minResolution.height, minResolution.width}),
 				m.NewInput("y", []int{1, 2}),
 			)
 			if err != nil {
@@ -226,7 +226,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 			model, _ = m.NewSequential("")
 			model.AddLayers(tt.args.layers...)
 			err = model.Compile(
-				m.NewInput("x", []int{1, 3, minResolution.height - 3, minResolution.width - 3}),
+				m.NewInput("x", []int{1, 1, minResolution.height - 3, minResolution.width - 3}),
 				m.NewInput("y", []int{1, 2}),
 			)
 			if err == nil {

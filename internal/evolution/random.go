@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maxConvMaxPoolingPairs = 2
+	maxConvMaxPoolingPairs = 3
 
 	maxConvOutput     = 16
 	maxConvKernelSize = 16
@@ -20,7 +20,7 @@ const (
 	maxPoolStride     = 1
 
 	maxDenseLayers = 2
-	maxDenseSize   = 256
+	maxDenseSize   = 512
 
 	minResolutionWidth  = 3
 	minResolutionHeight = 3
@@ -149,10 +149,15 @@ func generateRandomFC(prevOutput int) layer.FC {
 	}
 }
 
-func generateRandomStructure(inputWidth, inputHeight, numClasses int) (layers []layer.Config) {
+func generateRandomStructure(inputWidth, inputHeight, numClasses int, grayscale bool) (layers []layer.Config) {
 	// append some Conv2D-MaxPooling2D pairs with random parameters
 	numConvPaxPoolingPairs := 1 + rand.Intn(maxConvMaxPoolingPairs)
-	prevOutput := 3
+	var prevOutput int
+	if grayscale {
+		prevOutput = 1
+	} else {
+		prevOutput = 3
+	}
 	res := resolution{inputWidth, inputHeight}
 	var newRes resolution
 	for i := 0; i < numConvPaxPoolingPairs; i++ {

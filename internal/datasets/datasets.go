@@ -10,17 +10,20 @@ import (
 	_ "image/png"
 	"log"
 	"os"
+	"runtime"
 	"sotsuron/internal/utils"
+	"strings"
 	"time"
 )
 
 type Dataset struct {
+	path       string
 	x, y       tensor.Tensor
 	classNames []string
 }
 
-func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
-	dataset = &Dataset{}
+func LoadDataset(path string, grayscale bool) (dataset *Dataset, err error) { // TODO: asyncify
+	dataset = &Dataset{path: strings.TrimRight(path, "/\\")}
 	classes, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
@@ -28,7 +31,12 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 	var images []image.Image
 	var labels []int
 	var sampleWidth, sampleHeight int
-	channels := 3
+	var channels int
+	if grayscale {
+		channels = 1
+	} else {
+		channels = 3
+	}
 	rows := 0
 	start := time.Now()
 
@@ -74,7 +82,11 @@ func LoadDataset(path string) (dataset *Dataset, err error) { // TODO: asyncify
 		for y := 0; y < sampleHeight; y++ {
 			for x := 0; x < sampleWidth; x++ {
 				r, g, b, _ := img.At(x, y).RGBA()
-				xBacking = append(xBacking, float32(r)/0xffff, float32(g)/0xffff, float32(b)/0xffff)
+				if grayscale {
+					xBacking = append(xBacking, float32(r)/0xffff*0.3+float32(g)/0xffff*0.59+float32(b)/0xffff*0.11)
+				} else {
+					xBacking = append(xBacking, float32(r)/0xffff, float32(g)/0xffff, float32(b)/0xffff)
+				}
 			}
 		}
 		for j := 0; j < len(classes); j++ {
@@ -122,6 +134,21 @@ func (dataset *Dataset) SplitTrainTest(ratio float32) (xTrain, yTrain, xTest, yT
 	return
 }
 
-func (dataset *Dataset) NumClasses() int {
-	return len(dataset.classNames)
+type DatasetInfo struct {
+	Name                  string
+	NumImages, NumClasses int
+}
+
+func (dataset *Dataset) GetInfo() *DatasetInfo {
+	var split []string
+	if runtime.GOOS == "windows" {
+		split = strings.Split(dataset.path, "\\")
+	} else {
+		split = strings.Split(dataset.path, "/")
+	}
+	return &DatasetInfo{
+		split[len(split)-1],
+		dataset.x.Shape()[0],
+		dataset.y.Shape()[1],
+	}
 }
