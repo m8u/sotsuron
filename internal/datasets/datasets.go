@@ -43,11 +43,17 @@ func LoadDataset(path string, grayscale bool) (dataset *Dataset, err error) { //
 	// take sample width & height
 	classPath := fmt.Sprintf("%s/%s", path, classes[0].Name())
 	entities, err := os.ReadDir(classPath)
-	utils.MaybeCrash(err)
+	if err != nil {
+		return nil, err
+	}
 	sampleFile, err := os.Open(fmt.Sprintf("%s/%s", classPath, entities[0].Name()))
-	utils.MaybeCrash(err)
+	if err != nil {
+		return nil, err
+	}
 	sampleImg, _, err := image.Decode(sampleFile)
-	utils.MaybeCrash(err)
+	if err != nil {
+		return nil, err
+	}
 	sampleWidth, sampleHeight = sampleImg.Bounds().Dx(), sampleImg.Bounds().Dy()
 
 	// load images and labels
@@ -56,14 +62,20 @@ func LoadDataset(path string, grayscale bool) (dataset *Dataset, err error) { //
 		//log.Println(className)
 		classPath := fmt.Sprintf("%s/%s", path, className)
 		entities, err := os.ReadDir(classPath)
-		utils.MaybeCrash(err)
+		if err != nil {
+			return nil, err
+		}
 		rows += len(entities)
 		dataset.classNames = append(dataset.classNames, className)
 		for _, entity := range entities {
 			file, err := os.Open(fmt.Sprintf("%s/%s", classPath, entity.Name()))
-			utils.MaybeCrash(err)
+			if err != nil {
+				return nil, err
+			}
 			img, _, err := image.Decode(file)
-			utils.MaybeCrash(err)
+			if err != nil {
+				return nil, err
+			}
 			images = append(images, img)
 			labels = append(labels, i)
 		}
@@ -137,6 +149,8 @@ func (dataset *Dataset) SplitTrainTest(ratio float32) (xTrain, yTrain, xTest, yT
 type DatasetInfo struct {
 	Name                  string
 	NumImages, NumClasses int
+	Resolution            utils.Resolution
+	Grayscale             bool
 }
 
 func (dataset *Dataset) GetInfo() *DatasetInfo {
@@ -147,8 +161,10 @@ func (dataset *Dataset) GetInfo() *DatasetInfo {
 		split = strings.Split(dataset.path, "/")
 	}
 	return &DatasetInfo{
-		split[len(split)-1],
-		dataset.x.Shape()[0],
-		dataset.y.Shape()[1],
+		Name:       split[len(split)-1],
+		NumImages:  dataset.x.Shape()[0],
+		NumClasses: dataset.y.Shape()[1],
+		Resolution: utils.Resolution{Width: dataset.x.Shape()[3], Height: dataset.x.Shape()[2]},
+		Grayscale:  dataset.x.Shape()[1] == 1,
 	}
 }

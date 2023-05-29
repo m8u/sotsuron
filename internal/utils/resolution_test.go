@@ -1,4 +1,4 @@
-package evolution
+package utils
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	m "github.com/m8u/goro/pkg/v1/model"
 	"golang.org/x/exp/rand"
 	"reflect"
+	"sotsuron/internal/evolution"
 	"testing"
 	"time"
 )
@@ -22,7 +23,7 @@ func Test_resolution_after(t *testing.T) {
 		name         string
 		fields       fields
 		args         args
-		wantResAfter resolution
+		wantResAfter Resolution
 	}{
 		{
 			name: "conv2d_1",
@@ -38,9 +39,9 @@ func Test_resolution_after(t *testing.T) {
 					Pad:    []int{1, 1},
 				},
 			},
-			wantResAfter: resolution{
-				width:  28,
-				height: 28,
+			wantResAfter: Resolution{
+				Width:  28,
+				Height: 28,
 			},
 		},
 		{
@@ -57,9 +58,9 @@ func Test_resolution_after(t *testing.T) {
 					Pad:    []int{2, 2},
 				},
 			},
-			wantResAfter: resolution{
-				width:  37,
-				height: 33,
+			wantResAfter: Resolution{
+				Width:  37,
+				Height: 33,
 			},
 		},
 		{
@@ -75,9 +76,9 @@ func Test_resolution_after(t *testing.T) {
 					Stride: []int{1, 1},
 				},
 			},
-			wantResAfter: resolution{
-				width:  29,
-				height: 31,
+			wantResAfter: Resolution{
+				Width:  29,
+				Height: 31,
 			},
 		},
 		{
@@ -93,19 +94,19 @@ func Test_resolution_after(t *testing.T) {
 					Stride: []int{1, 1},
 				},
 			},
-			wantResAfter: resolution{
-				width:  35,
-				height: 45,
+			wantResAfter: Resolution{
+				Width:  35,
+				Height: 45,
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res := &resolution{
-				width:  tt.fields.width,
-				height: tt.fields.height,
+			res := &Resolution{
+				Width:  tt.fields.width,
+				Height: tt.fields.height,
 			}
-			if gotResAfter := res.after(tt.args.config); !reflect.DeepEqual(gotResAfter, tt.wantResAfter) {
+			if gotResAfter := res.After(tt.args.config); !reflect.DeepEqual(gotResAfter, tt.wantResAfter) {
 				t.Errorf("after() = %v, want %v", gotResAfter, tt.wantResAfter)
 			}
 		})
@@ -120,19 +121,19 @@ func Test_resolution_before(t *testing.T) {
 	}
 	type test struct {
 		name          string
-		resAfter      resolution
+		resAfter      Resolution
 		args          args
-		wantResBefore resolution
+		wantResBefore Resolution
 	}
 	var tests []test
 	for i := 0; i < 50; i++ {
 		// use resolution.after to test resolution.before
-		res := resolution{
-			width:  3 + rand.Intn(100),
-			height: 3 + rand.Intn(100),
+		res := Resolution{
+			Width:  3 + rand.Intn(100),
+			Height: 3 + rand.Intn(100),
 		}
-		conv2D, _ := generateRandomConv2D(10, res)
-		resAfter := res.after(conv2D)
+		conv2D, _ := evolution.GenerateRandomConv2D(evolution.DefaultAdvancedConfig(), 10, res)
+		resAfter := res.After(conv2D)
 		tests = append(tests, test{
 			name:          "conv2d",
 			resAfter:      resAfter,
@@ -140,12 +141,12 @@ func Test_resolution_before(t *testing.T) {
 			wantResBefore: res,
 		})
 
-		res = resolution{
-			width:  3 + rand.Intn(100),
-			height: 3 + rand.Intn(100),
+		res = Resolution{
+			Width:  3 + rand.Intn(100),
+			Height: 3 + rand.Intn(100),
 		}
-		maxPooling2D, _ := generateRandomMaxPooling2D(res)
-		resAfter = res.after(maxPooling2D)
+		maxPooling2D, _ := evolution.GenerateRandomMaxPooling2D(evolution.DefaultAdvancedConfig(), res)
+		resAfter = res.After(maxPooling2D)
 		tests = append(tests, test{
 			name:          "maxpooling2d",
 			resAfter:      resAfter,
@@ -180,7 +181,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 		var layers []layer.Config
 	generateUntilHasConv2D:
 		for {
-			layers = generateRandomStructure(inputWidth, inputHeight, 2, true)
+			layers = evolution.GenerateRandomStructure(evolution.DefaultAdvancedConfig(), inputWidth, inputHeight, 2, true)
 			for _, l := range layers {
 				if _, ok := l.(layer.Conv2D); ok {
 					break generateUntilHasConv2D
@@ -199,13 +200,13 @@ func Test_resolution_beforeMany(t *testing.T) {
 				fmt.Println(l)
 			}
 			fmt.Println("...")
-			minResolution := (&resolution{3, 3}).calculateMinRequiredBefore(tt.args.layers)
+			minResolution := (&Resolution{3, 3}).CalculateMinRequiredBefore(tt.args.layers)
 			fmt.Println(minResolution)
 
 			for i, l := range tt.args.layers {
 				if fc, ok := l.(layer.FC); ok {
-					newRes := minResolution.afterMany(tt.args.layers[:i])
-					fc.Input = tt.args.layers[i-3].(layer.Conv2D).Output * newRes.width * newRes.height
+					newRes := minResolution.AfterMany(tt.args.layers[:i])
+					fc.Input = tt.args.layers[i-3].(layer.Conv2D).Output * newRes.Width * newRes.Height
 					tt.args.layers[i] = fc
 					break
 				}
@@ -215,7 +216,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 			model, _ := m.NewSequential("")
 			model.AddLayers(tt.args.layers...)
 			err := model.Compile(
-				m.NewInput("x", []int{1, 1, minResolution.height, minResolution.width}),
+				m.NewInput("x", []int{1, 1, minResolution.Height, minResolution.Width}),
 				m.NewInput("y", []int{1, 2}),
 			)
 			if err != nil {
@@ -226,7 +227,7 @@ func Test_resolution_beforeMany(t *testing.T) {
 			model, _ = m.NewSequential("")
 			model.AddLayers(tt.args.layers...)
 			err = model.Compile(
-				m.NewInput("x", []int{1, 1, minResolution.height - 3, minResolution.width - 3}),
+				m.NewInput("x", []int{1, 1, minResolution.Height - 3, minResolution.Width - 3}),
 				m.NewInput("y", []int{1, 2}),
 			)
 			if err == nil {

@@ -1,6 +1,7 @@
 package evolution
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
@@ -15,24 +16,21 @@ import (
 	"time"
 )
 
-const (
-	batchSize      = 10
-	mutationChance = 1.0
-)
-
 type Individual struct {
 	name string
 	*m.Sequential
-	inputRes    resolution
+	inputRes    utils.Resolution
 	isGrayscale bool
 	numClasses  int
-	fitness     chan float32
+	fitness     float32
+	trained     bool
+	lives       int
 }
 
-func NewIndividual(inputWidth, inputHeight, numClasses int, grayscale bool) (individual *Individual) {
+func NewIndividual(advCfg AdvancedConfig, inputWidth, inputHeight, numClasses int, grayscale bool) (individual *Individual) {
 	name := uuid.New().String()
 	model, _ := m.NewSequential(name) // TODO: specify metrics
-	model.AddLayers(generateRandomStructure(inputWidth, inputHeight, numClasses, grayscale)...)
+	model.AddLayers(GenerateRandomStructure(advCfg, inputWidth, inputHeight, numClasses, grayscale)...)
 	var channels int
 	if grayscale {
 		channels = 1
@@ -42,21 +40,21 @@ func NewIndividual(inputWidth, inputHeight, numClasses int, grayscale bool) (ind
 	err := model.Compile(
 		m.NewInput("x", []int{1, channels, inputHeight, inputWidth}),
 		m.NewInput("y", []int{1, numClasses}),
-		m.WithBatchSize(batchSize),
+		m.WithBatchSize(advCfg.BatchSize),
 	)
 	utils.MaybeCrash(err)
 	individual = &Individual{
 		name:        name,
 		Sequential:  model,
-		inputRes:    resolution{inputWidth, inputHeight},
+		inputRes:    utils.Resolution{Width: inputWidth, Height: inputHeight},
 		isGrayscale: grayscale,
 		numClasses:  numClasses,
-		fitness:     make(chan float32, 1),
+		lives:       1,
 	}
 	return
 }
 
-func (individual *Individual) evaluateBatch(x, y tensor.Tensor, batchSize int) (accuracy, loss float32, err error) {
+func (individual *Individual) evaluateBatch(ctx context.Context, x, y tensor.Tensor, batchSize int) (accuracy, loss float32, err error) {
 	exampleSize := x.Shape()[0]
 	batches := exampleSize / batchSize
 
@@ -69,6 +67,12 @@ func (individual *Individual) evaluateBatch(x, y tensor.Tensor, batchSize int) (
 
 	var accuracies []float32
 	for batch := 0; batch < batches; batch++ {
+		select {
+		case <-ctx.Done():
+			return 0, 0, context.Canceled
+		default:
+		}
+
 		start := batch * batchSize
 		end := start + batchSize
 		if start >= exampleSize {
@@ -80,7 +84,7 @@ func (individual *Individual) evaluateBatch(x, y tensor.Tensor, batchSize int) (
 
 		xi, err := x.Slice(dense.MakeRangedSlice(start, end))
 		utils.MaybeCrash(err)
-		err = xi.Reshape(batchSize, channels, individual.inputRes.height, individual.inputRes.width)
+		err = xi.Reshape(batchSize, channels, individual.inputRes.Height, individual.inputRes.Width)
 		utils.MaybeCrash(err)
 
 		yi, err := y.Slice(dense.MakeRangedSlice(start, end))
@@ -121,10 +125,10 @@ func calculateAccuracy(yHat, y tensor.Tensor) (accuracy float32, err error) {
 	return float32(numTrue.Data().(int)) / float32(eqd.Len()), nil
 }
 
-func (individual *Individual) CalculateFitnessBatch(xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
-	epochs := 10
+func (individual *Individual) CalculateFitnessBatch(ctx context.Context, advCfg AdvancedConfig, xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
+	epochs := 5
 	exampleSize := xTrain.Shape()[0]
-	batches := exampleSize / batchSize
+	batches := exampleSize / advCfg.BatchSize
 
 	var channels int
 	if individual.isGrayscale {
@@ -139,8 +143,14 @@ func (individual *Individual) CalculateFitnessBatch(xTrain, yTrain, xTest, yTest
 
 	for epoch := 0; epoch < epochs; epoch++ {
 		for batch := 0; batch < batches; batch++ {
-			start := batch * batchSize
-			end := start + batchSize
+			select {
+			case <-ctx.Done():
+				return -1, context.Canceled
+			default:
+			}
+
+			start := batch * advCfg.BatchSize
+			end := start + advCfg.BatchSize
 			if start >= exampleSize {
 				break
 			}
@@ -150,31 +160,35 @@ func (individual *Individual) CalculateFitnessBatch(xTrain, yTrain, xTest, yTest
 
 			xi, err := xTrain.Slice(dense.MakeRangedSlice(start, end))
 			utils.MaybeCrash(err) // todo maybe replace with return
-			err = xi.Reshape(batchSize, channels, individual.inputRes.height, individual.inputRes.width)
+			err = xi.Reshape(advCfg.BatchSize, channels, individual.inputRes.Height, individual.inputRes.Width)
 			utils.MaybeCrash(err)
 
 			yi, err := yTrain.Slice(dense.MakeRangedSlice(start, end))
 			utils.MaybeCrash(err)
-			err = yi.Reshape(batchSize, individual.numClasses)
+			err = yi.Reshape(advCfg.BatchSize, individual.numClasses)
 			utils.MaybeCrash(err)
 
-			err = individual.FitBatch(xi, yi)
+			err = individual.FitBatch(xi, yi) // FIXME: runtime error: invalid memory address or nil pointer dereference (goro@v0.1.3/pkg/v1/model/io.go:84)
 			if err != nil {
 				return -1, err
 			}
-			err = individual.Tracker.LogStep(epoch, batch)
-			utils.MaybeCrash(err) // FIXME: json: unsupported value: +Inf
+			err = individual.Tracker.LogStep(epoch, batch) // FIXME: json: unsupported value: NaN
+			if err != nil {
+				return -1, err
+			}
 		}
 		evalStartTime = time.Now()
-		accuracy, loss, err = individual.evaluateBatch(xTest, yTest, batchSize)
+		accuracy, loss, err = individual.evaluateBatch(ctx, xTest, yTest, advCfg.BatchSize)
 		evalDurations = append(evalDurations, time.Since(evalStartTime).Seconds())
-		utils.MaybeCrash(err)
+		if !errors.Is(err, context.Canceled) {
+			utils.MaybeCrash(err)
+		}
 		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
 	}
 	err = individual.Tracker.Clear()
 	meanEvalDuration := float32(stat.Mean(evalDurations, nil))
-	fmt.Println("meanEvalDuration:", meanEvalDuration)
-	return (accuracy + 1/loss) / (meanEvalDuration * 10), err
+	fmt.Println(individual.name, accuracy, loss, meanEvalDuration)
+	return accuracy*1.0 + -1*loss*0.5, err
 }
 
 func getPrevOutput(layers []layer.Config, startIndex int, grayscale bool) int {
@@ -218,15 +232,15 @@ func findNextConv2DIndex(layers []layer.Config, startIndex int) int {
 	return nextConv2DIndex
 }
 
-func (individual *Individual) Mutate() (mutated *Individual, err error) {
+func (individual *Individual) Mutate(advCfg AdvancedConfig, mutationChance float32) (mutated *Individual, err error) {
 	// get a slice of layers of a model
 	layers := make([]layer.Config, len(individual.Chain.Layers))
 	copy(layers, individual.Chain.Layers)
 
 	input := (individual.Sequential.X().Inputs()[0].Shape())[2:]
-	res := resolution{
-		width:  input[1],
-		height: input[0],
+	res := utils.Resolution{
+		Width:  input[1],
+		Height: input[0],
 	}
 	var channels int
 	if individual.isGrayscale {
@@ -248,7 +262,7 @@ func (individual *Individual) Mutate() (mutated *Individual, err error) {
 				if i > 0 {
 					prevOutput = getPrevOutput(layers, i, individual.isGrayscale)
 				}
-				conv2D, err := generateRandomConv2D(prevOutput, res, layers[i+1:]...)
+				conv2D, err := GenerateRandomConv2D(advCfg, prevOutput, res, layers[i+1:]...)
 				if err != nil {
 					return nil, err
 				}
@@ -260,16 +274,16 @@ func (individual *Individual) Mutate() (mutated *Individual, err error) {
 					nextConv2D.Input = conv2D.Output
 					layers[nextConv2DIndex] = nextConv2D
 				}
-				res = res.after(conv2D)
+				res = res.After(conv2D)
 			} else if _, ok := layers[i].(layer.MaxPooling2D); ok {
-				maxPooling2D, err := generateRandomMaxPooling2D(res, layers[i+1:]...)
+				maxPooling2D, err := GenerateRandomMaxPooling2D(advCfg, res, layers[i+1:]...)
 				if err != nil {
 					return nil, err
 				}
 				layers[i] = maxPooling2D
-				res = res.after(maxPooling2D)
+				res = res.After(maxPooling2D)
 			} else if fc, ok := layers[i].(layer.FC); ok {
-				fc = generateRandomFC(fc.Input)
+				fc = generateRandomFC(advCfg, fc.Input)
 				layers[i] = fc
 				// update input of next dense layer
 				nextFC := layers[i+1].(layer.FC)
@@ -277,14 +291,14 @@ func (individual *Individual) Mutate() (mutated *Individual, err error) {
 				layers[i+1] = nextFC
 			}
 		} else {
-			res = res.after(layers[i])
+			res = res.After(layers[i])
 		}
 	}
 	// update input of first FC layer
 	firstFCIndex := findFirstFCIndex(layers)
 	firstFC := layers[firstFCIndex].(layer.FC)
 	prevOutput := getPrevOutput(layers, firstFCIndex, individual.isGrayscale)
-	firstFC.Input = prevOutput * res.width * res.height
+	firstFC.Input = prevOutput * res.Width * res.Height
 	layers[firstFCIndex] = firstFC
 
 	// create new model with mutated layers
@@ -295,14 +309,14 @@ func (individual *Individual) Mutate() (mutated *Individual, err error) {
 	//	fmt.Printf("%v\n", l)
 	//}
 	newModel.AddLayers(layers...)
-	err = newModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
+	err = newModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
 	mutated = &Individual{
 		name:        name,
 		Sequential:  newModel,
 		inputRes:    individual.inputRes,
 		isGrayscale: individual.isGrayscale,
 		numClasses:  individual.numClasses,
-		fitness:     make(chan float32, 1),
+		lives:       1,
 	}
 	return
 }
@@ -315,7 +329,7 @@ func (err *CrossoverFailedError) Error() string {
 	return fmt.Sprintf("crossover failed: %v", err.recoverData)
 }
 
-func (individual *Individual) Crossover(other *Individual) (child1, child2 *Individual, err1, err2 error) {
+func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
 	// get slices of layers of both models
 	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
 	layersRight := make([]layer.Config, len(other.Chain.Layers))
@@ -372,9 +386,9 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 		}
 		firstFCIndex := findFirstFCIndex(layers)
 		input := (individual.Sequential.X().Inputs()[0].Shape())[2:]
-		res := (&resolution{input[1], input[0]}).afterMany(layers[:firstFCIndex-1])
+		res := (&utils.Resolution{Width: input[1], Height: input[0]}).AfterMany(layers[:firstFCIndex-1])
 		fc := layers[firstFCIndex].(layer.FC)
-		fc.Input = getPrevOutput(layers, firstFCIndex-1, individual.isGrayscale) * res.width * res.height
+		fc.Input = getPrevOutput(layers, firstFCIndex-1, individual.isGrayscale) * res.Width * res.Height
 		if fc.Input == 0 {
 			return errors.New("input is 0")
 		}
@@ -402,8 +416,8 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 	child2Model.AddLayers(layersRight...)
 
 	// compile models
-	err1 = child1Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
-	err2 = child2Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(batchSize))
+	err1 = child1Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
+	err2 = child2Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
 
 	return &Individual{
 			name:        child1Name,
@@ -411,14 +425,14 @@ func (individual *Individual) Crossover(other *Individual) (child1, child2 *Indi
 			inputRes:    individual.inputRes,
 			isGrayscale: individual.isGrayscale,
 			numClasses:  individual.numClasses,
-			fitness:     make(chan float32, 1),
+			lives:       1,
 		}, &Individual{
 			name:        child2Name,
 			Sequential:  child2Model,
 			inputRes:    individual.inputRes,
 			isGrayscale: individual.isGrayscale,
 			numClasses:  individual.numClasses,
-			fitness:     make(chan float32, 1),
+			lives:       1,
 		},
 		err1, err2
 }

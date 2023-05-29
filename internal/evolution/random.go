@@ -2,28 +2,14 @@ package evolution
 
 import (
 	"fmt"
+	"github.com/m8u/gorgonia"
 	"github.com/m8u/goro/pkg/v1/layer"
 	"golang.org/x/exp/rand"
+	"gorgonia.org/tensor"
 	"math"
-)
-
-const (
-	maxConvMaxPoolingPairs = 3
-
-	maxConvOutput     = 16
-	maxConvKernelSize = 16
-	maxConvPad        = 2
-	maxConvStride     = 1
-
-	maxPoolKernelSize = 16
-	maxPoolPad        = 2
-	maxPoolStride     = 1
-
-	maxDenseLayers = 2
-	maxDenseSize   = 512
-
-	minResolutionWidth  = 3
-	minResolutionHeight = 3
+	"modernc.org/mathutil"
+	"sort"
+	"sotsuron/internal/utils"
 )
 
 var activationFns = []layer.ActivationFn{
@@ -36,8 +22,8 @@ var activationFns = []layer.ActivationFn{
 }
 
 type NoValidConfigFound struct {
-	inputRes     resolution
-	minOutputRes resolution
+	inputRes     utils.Resolution
+	minOutputRes utils.Resolution
 }
 
 func (err NoValidConfigFound) Error() string {
@@ -48,19 +34,19 @@ func (err NoValidConfigFound) Error() string {
 }
 
 // getValidRandomConfig returns a random valid Conv2D or MaxPooling2D config, or an error if none are found.
-func getValidRandomConfig(inputRes, minOutputRes resolution) (width, height, pad, stride int, err error) {
+func getValidRandomConfig(advCfg AdvancedConfig, inputRes, minOutputRes utils.Resolution) (width, height, pad, stride int, err error) {
 	var validConfigs [][]int
-	for width = 2; width <= minOutputRes.width; width++ {
-		for height = 2; height <= minOutputRes.height; height++ {
-			for pad = 0; pad <= maxConvPad; pad++ {
-				for stride = 1; stride <= maxConvStride; stride++ {
-					outputRes := inputRes.after(layer.Conv2D{
+	for width = 2; width <= minOutputRes.Width; width++ {
+		for height = 2; height <= minOutputRes.Height; height++ {
+			for pad = 0; pad <= advCfg.MaxConvPad; pad++ {
+				for stride = 1; stride <= advCfg.MaxConvStride; stride++ {
+					outputRes := inputRes.After(layer.Conv2D{
 						Height: height,
 						Width:  width,
-						Pad:    squareShapeSlice(pad),
-						Stride: squareShapeSlice(stride),
+						Pad:    SquareShapeSlice(pad),
+						Stride: SquareShapeSlice(stride),
 					})
-					if outputRes.width >= minOutputRes.width && outputRes.height >= minOutputRes.height {
+					if outputRes.Width >= minOutputRes.Width && outputRes.Height >= minOutputRes.Height {
 						validConfigs = append(validConfigs, []int{width, height, pad, stride})
 					}
 				}
@@ -68,53 +54,56 @@ func getValidRandomConfig(inputRes, minOutputRes resolution) (width, height, pad
 		}
 	}
 	if len(validConfigs) > 0 {
-		config := validConfigs[rand.Intn(len(validConfigs))]
+		sort.Slice(validConfigs, func(i, j int) bool {
+			return validConfigs[i][0]*validConfigs[i][1] < validConfigs[j][0]*validConfigs[j][1]
+		})
+		config := validConfigs[mathutil.Clamp(int(math.Abs(gorgonia.Gaussian64(0, float64(len(validConfigs)-1))[0])), 0, len(validConfigs)-1)]
 		return config[0], config[1], config[2], config[3], nil
 	}
 	return 0, 0, 0, 0, NoValidConfigFound{inputRes, minOutputRes}
 }
 
-func generateRandomConv2D(prevOutput int, imageRes resolution, layers ...layer.Config) (layer.Conv2D, error) {
+func GenerateRandomConv2D(advCfg AdvancedConfig, prevOutput int, imageRes utils.Resolution, layers ...layer.Config) (layer.Conv2D, error) {
 	if len(layers) > 0 {
-		minOutputRes := (&resolution{
-			minResolutionWidth,
-			minResolutionHeight,
-		}).calculateMinRequiredBefore(layers)
-		width, height, pad, stride, err := getValidRandomConfig(imageRes, minOutputRes)
+		minOutputRes := (&utils.Resolution{
+			Width:  advCfg.MinResolutionWidth,
+			Height: advCfg.MinResolutionHeight,
+		}).CalculateMinRequiredBefore(layers)
+		width, height, pad, stride, err := getValidRandomConfig(advCfg, imageRes, minOutputRes)
 		if err != nil {
 			return layer.Conv2D{}, err
 		}
 		return layer.Conv2D{
 			Input:      prevOutput,
-			Output:     1 + rand.Intn(maxConvOutput),
+			Output:     1 + rand.Intn(advCfg.MaxConvOutput),
 			Height:     height,
 			Width:      width,
 			Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
-			Pad:        squareShapeSlice(pad),
-			Stride:     squareShapeSlice(stride),
+			Pad:        SquareShapeSlice(pad),
+			Stride:     SquareShapeSlice(stride),
 		}, nil
 	}
 	return layer.Conv2D{
 		Input:      prevOutput,
-		Output:     1 + rand.Intn(maxConvOutput),
-		Height:     2 + rand.Intn(int(math.Min(maxConvKernelSize-1, float64(imageRes.height-2)))),
-		Width:      2 + rand.Intn(int(math.Min(maxConvKernelSize-1, float64(imageRes.width-2)))),
+		Output:     1 + rand.Intn(advCfg.MaxConvOutput),
+		Height:     2 + rand.Intn(tensor.MinInt(advCfg.MaxConvKernelSize-1, imageRes.Height-2)),
+		Width:      2 + rand.Intn(tensor.MinInt(advCfg.MaxConvKernelSize-1, imageRes.Width-2)),
 		Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
-		Pad:        squareShapeSlice(rand.Intn(maxConvPad + 1)),
-		Stride: squareShapeSlice(1 + rand.Intn(int(math.Min(
-			maxConvStride,
-			math.Min(float64(imageRes.width), float64(imageRes.height))-1,
-		)))),
+		Pad:        SquareShapeSlice(rand.Intn(advCfg.MaxConvPad + 1)),
+		Stride: SquareShapeSlice(1 + rand.Intn(tensor.MinInt(
+			advCfg.MaxConvStride,
+			tensor.MinInt(imageRes.Width, imageRes.Height)-1,
+		))),
 	}, nil
 }
 
-func generateRandomMaxPooling2D(imageRes resolution, layers ...layer.Config) (layer.MaxPooling2D, error) {
+func GenerateRandomMaxPooling2D(advCfg AdvancedConfig, imageRes utils.Resolution, layers ...layer.Config) (layer.MaxPooling2D, error) {
 	if len(layers) > 0 {
-		minOutputRes := (&resolution{
-			minResolutionWidth,
-			minResolutionHeight,
-		}).calculateMinRequiredBefore(layers)
-		width, height, pad, stride, err := getValidRandomConfig(imageRes, minOutputRes)
+		minOutputRes := (&utils.Resolution{
+			Width:  advCfg.MinResolutionWidth,
+			Height: advCfg.MinResolutionHeight,
+		}).CalculateMinRequiredBefore(layers)
+		width, height, pad, stride, err := getValidRandomConfig(advCfg, imageRes, minOutputRes)
 		if err != nil {
 			return layer.MaxPooling2D{}, err
 		}
@@ -123,75 +112,71 @@ func generateRandomMaxPooling2D(imageRes resolution, layers ...layer.Config) (la
 				height,
 				width,
 			},
-			Pad:    squareShapeSlice(pad),
-			Stride: squareShapeSlice(stride),
+			Pad:    SquareShapeSlice(pad),
+			Stride: SquareShapeSlice(stride),
 		}, nil
 	}
 
 	return layer.MaxPooling2D{
 		Kernel: []int{
-			2 + rand.Intn(int(math.Min(maxPoolKernelSize-1, float64(imageRes.height-2)))),
-			2 + rand.Intn(int(math.Min(maxPoolKernelSize-1, float64(imageRes.width-2)))), // see gorgonia's nn.go:255
+			2 + rand.Intn(int(math.Min(float64(advCfg.MaxPoolKernelSize-1), float64(imageRes.Height-2)))), // todo use int min
+			2 + rand.Intn(int(math.Min(float64(advCfg.MaxPoolKernelSize-1), float64(imageRes.Width-2)))),  // see gorgonia's nn.go:255 todo use int min
 		},
-		Pad: squareShapeSlice(rand.Intn(maxPoolPad + 1)),
-		Stride: squareShapeSlice(1 + rand.Intn(int(math.Min(
-			maxPoolStride,
-			math.Min(float64(imageRes.width), float64(imageRes.height))-1,
+		Pad: SquareShapeSlice(rand.Intn(advCfg.MaxPoolPad + 1)),
+		Stride: SquareShapeSlice(1 + rand.Intn(int(math.Min(
+			float64(advCfg.MaxPoolStride), // todo use int min
+			math.Min(float64(imageRes.Width), float64(imageRes.Height))-1,
 		)))),
 	}, nil
 }
 
-func generateRandomFC(prevOutput int) layer.FC {
+func generateRandomFC(advCfg AdvancedConfig, prevOutput int) layer.FC {
 	return layer.FC{
 		Input:      prevOutput,
-		Output:     1 + rand.Intn(maxDenseSize),
+		Output:     1 + rand.Intn(advCfg.MaxDenseSize),
 		Activation: activationFns[rand.Intn(len(activationFns))].Clone(),
 	}
 }
 
-func generateRandomStructure(inputWidth, inputHeight, numClasses int, grayscale bool) (layers []layer.Config) {
+func GenerateRandomStructure(advCfg AdvancedConfig, inputWidth, inputHeight, numClasses int, grayscale bool) (layers []layer.Config) {
 	// append some Conv2D-MaxPooling2D pairs with random parameters
-	numConvPaxPoolingPairs := 1 + rand.Intn(maxConvMaxPoolingPairs)
+	numConvMaxPoolingPairs := 1 + rand.Intn(advCfg.MaxConvMaxPoolingPairs)
 	var prevOutput int
 	if grayscale {
 		prevOutput = 1
 	} else {
 		prevOutput = 3
 	}
-	res := resolution{inputWidth, inputHeight}
-	var newRes resolution
-	for i := 0; i < numConvPaxPoolingPairs; i++ {
-		conv2D, _ := generateRandomConv2D(prevOutput, res)
-		if newRes = res.after(conv2D); !newRes.validate() {
+	res := utils.Resolution{Width: inputWidth, Height: inputHeight}
+	var newRes utils.Resolution
+	for i := 0; i < numConvMaxPoolingPairs; i++ {
+		conv2D, _ := GenerateRandomConv2D(advCfg, prevOutput, res)
+		if newRes = res.After(conv2D); !newRes.Validate(advCfg.MinResolutionWidth, advCfg.MinResolutionHeight) {
 			break
 		}
 		fmt.Println(conv2D)
 		fmt.Println(newRes.String())
+		layers = append(layers, conv2D)
+		prevOutput = conv2D.Output
+		res = newRes
 
-		maxPooling2D, _ := generateRandomMaxPooling2D(newRes)
-		if newRes = newRes.after(maxPooling2D); !newRes.validate() {
+		maxPooling2D, _ := GenerateRandomMaxPooling2D(advCfg, newRes)
+		if newRes = newRes.After(maxPooling2D); !newRes.Validate(advCfg.MinResolutionWidth, advCfg.MinResolutionHeight) {
 			break
 		}
 		fmt.Println(maxPooling2D)
-		fmt.Println(newRes.String())
-
+		layers = append(layers, maxPooling2D)
 		res = newRes
-
-		layers = append(layers,
-			conv2D,
-			maxPooling2D,
-		)
-		prevOutput = conv2D.Output
 	}
 
 	// flatten
 	layers = append(layers, layer.Flatten{})
 
 	// append some dense layers
-	numDenseLayers := 1 + rand.Intn(maxDenseLayers)
-	prevOutput = prevOutput * res.width * res.height
+	numDenseLayers := 1 + rand.Intn(advCfg.MaxDenseLayers)
+	prevOutput = prevOutput * res.Width * res.Height
 	for i := 0; i < numDenseLayers; i++ {
-		fc := generateRandomFC(prevOutput)
+		fc := generateRandomFC(advCfg, prevOutput)
 		fmt.Printf("%v -> %v\n", prevOutput, fc.Output)
 		layers = append(layers, fc)
 		prevOutput = fc.Output

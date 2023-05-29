@@ -7,12 +7,20 @@
 </head>
 <body>
 <div class="text-center" id="app">
-    <div>
-        <canvas class="bg-info" id="my-canvas" width="100%" height="100%"></canvas>
+    <div class="row p-3 justify-content-center">
+        <div class="col-auto" id="all-chart-canvas-container">
+            <canvas id="all-chart-canvas"></canvas>
+        </div>
+        <div class="col-auto" id="best-chart-canvas-container">
+            <canvas id="best-chart-canvas"></canvas>
+        </div>
+        <div class="col-auto" id="visualization-canvas-container">
+            <canvas id="visualization-canvas"></canvas>
+        </div>
     </div>
-    <div class="row p-2 m-1 mt-0">
-        <fieldset class="col text-start border rounded-3 p-1 pt-0 pb-3">
-            <legend class="small float-none w-auto px-2">Датасет</legend>
+    <div class="row fixed-bottom p-2 m-1 gap-2 justify-content-center" id="controls">
+        <fieldset class="col-md-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+            <legend class="small text-primary float-none w-auto px-2">Датасет</legend>
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="dataset-name" value="-">
                 <label for="dataset-name">Название</label>
@@ -24,6 +32,10 @@
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="dataset-num-images" value="-">
                 <label for="dataset-num-images">Кол-во изображений</label>
+            </div>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="dataset-resolution" value="-">
+                <label for="dataset-resolution">Разрешение</label>
             </div>
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="dataset-num-channels" value="-">
@@ -39,11 +51,125 @@
                 </ul>
             </div>
         </fieldset>
-        <div class="col">
-            <button class="btn btn-primary" onclick="">do stuff</button>
+        <fieldset class="col-md-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+            <legend class="small text-primary float-none w-auto px-2">Эволюция</legend>
+            <div class="d-flex">
+                <div class="form-floating mx-2">
+                    <input type="number" class="form-control" id="config-num-individuals" value="10">
+                    <label for="config-num-individuals">Кол-во особей</label>
+                </div>
+            </div>
+            <div class="d-flex mt-2">
+                <div class="form-floating mx-2">
+                    <input type="number" class="form-control" id="config-num-generations" value="5">
+                    <label for="config-num-generations">Кол-во поколений</label>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary m-2 mt-3" data-bs-toggle="modal" data-bs-target="#more-settings-modal">
+                Больше настроек...
+            </button>
+            <div class="d-flex p-2 pt-2 gap-2">
+                <button type="button" class="btn btn-sm btn-success" id="evo-start-button" disabled onclick="evolve()">
+                    Старт
+                </button>
+                <button type="button" class="btn btn-sm btn-danger visually-hidden" id="evo-cancel-button" onclick="abortEvolution()">
+                    Отмена
+                </button>
+                <p class="small text-muted m-1 visually-hidden" id="evo-progress-status"></p>
+            </div>
+            <div class="progress m-2 visually-hidden" role="progressbar" id="evo-progress-bar">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" id="evo-progress-bar-fill" style="width: 0"></div>
+            </div>
+        </fieldset>
+    </div>
+    <div class="toast-container position-fixed top-0 start-0 p-3">
+        <div id="live-toast" class="toast text-bg-danger text-start" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-body" id="live-toast-body"></div>
         </div>
-        <div class="col">
-            <button class="btn btn-primary" onclick="">do stuff</button>
+    </div>
+    <div class="modal fade" id="more-settings-modal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-body text-start">
+                    <fieldset class="text-start border border-secondary rounded-3 p-1 pt-0 pb-3">
+                        <legend class="small text-secondary float-none w-auto px-2">Обучение</legend>
+                        <div class="form-floating mx-2">
+                            <input type="number" step="0.1" class="form-control" id="config-train-test-ratio">
+                            <label for="config-train-test-ratio">Соотношение train:test</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-epochs">
+                            <label for="config-epochs">Кол-во эпох (итераций)</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-batch-size">
+                            <label for="config-batch-size">Размер партии (batch size)</label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="text-start border border-secondary rounded-3 p-1 pt-0 pb-3 mt-3">
+                        <legend class="small text-secondary float-none w-auto px-2">Мутация</legend>
+                        <div class="form-floating mx-2">
+                            <input type="number" step="0.1" class="form-control" id="config-mutation-chance">
+                            <label for="config-mutation-chance">Вероятность мутации</label>
+                        </div>
+                    </fieldset>
+                    <fieldset class="text-start border border-secondary rounded-3 p-1 pt-0 pb-3 mt-3">
+                        <legend class="small text-secondary float-none w-auto px-2">Случайная генерация</legend>
+                        <div class="form-floating mx-2">
+                            <input type="number" class="form-control" id="config-max-conv-max-pooling-pairs">
+                            <label for="config-max-conv-max-pooling-pairs">Макс. кол-во пар Conv2D-MaxPooling2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-conv-output">
+                            <label for="config-max-conv-output">Макс. кол-во фильтров в Conv2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-conv-kernel-size">
+                            <label for="config-max-conv-kernel-size">Макс. размер фильтра Conv2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-conv-pad">
+                            <label for="config-max-conv-pad">Макс. заполнение (pad) в Conv2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-conv-stride">
+                            <label for="config-max-conv-stride">Макс. шаг (stride) в Conv2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-pool-kernel-size">
+                            <label for="config-max-pool-kernel-size">Макс. размер фильтра MaxPooling2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-pool-pad">
+                            <label for="config-max-pool-pad">Макс. заполнение (pad) в MaxPooling2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-pool-stride">
+                            <label for="config-max-pool-stride">Макс. шаг (stride) в MaxPooling2D</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-dense-layers">
+                            <label for="config-max-dense-layers">Макс. кол-во полносвязных слоев</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-max-dense-size">
+                            <label for="config-max-dense-size">Макс. кол-во нейронов в полносвязном слое</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-min-resolution-width">
+                            <label for="config-min-resolution-width">Мин. выходное разрешение (ширина)</label>
+                        </div>
+                        <div class="form-floating mx-2 mt-2">
+                            <input type="number" class="form-control" id="config-min-resolution-height">
+                            <label for="config-min-resolution-height">Мин. выходное разрешение (высота)</label>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetConfig()">Сброс</button>
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">Сохранить</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>

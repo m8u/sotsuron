@@ -36,13 +36,13 @@ func TestSpecies_Evolve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_light", tt.fields.grayscale)
+			dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight", tt.fields.grayscale)
 			utils.MaybeCrash(err)
 			xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
 			utils.MaybeCrash(err)
 
-			species := NewSpecies(tt.fields.numIndividuals, tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, tt.fields.grayscale)
-			_ = species.Evolve(tt.args.numGenerations, xTrain, yTrain, xTest, yTest)
+			species := NewSpecies(DefaultAdvancedConfig(), tt.fields.numIndividuals, tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, tt.fields.grayscale)
+			_ = species.Evolve(DefaultAdvancedConfig(), tt.args.numGenerations, xTrain, yTrain, xTest, yTest, nil, nil)
 		})
 	}
 }

@@ -6,12 +6,13 @@ require (
 	github.com/aunum/log v0.0.0-20200821225356-38d2e2c8b489
 	github.com/google/uuid v1.3.0
 	github.com/m8u/gold v0.1.1
+	github.com/m8u/gorgonia v0.10.1
 	github.com/m8u/goro v0.1.3
 	github.com/wailsapp/wails/v2 v2.5.1
 	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea
 	gonum.org/v1/gonum v0.13.0
 	gorgonia.org/tensor v0.9.24
-	gorgonia.org/vecf32 v0.9.0
+	modernc.org/mathutil v1.1.1
 )
 
 require (
@@ -40,12 +41,12 @@ require (
 	github.com/leaanthony/gosod v1.0.3 // indirect
 	github.com/leaanthony/slicer v1.5.0 // indirect
 	github.com/leesper/go_rng v0.0.0-20190531154944-a612b043e353 // indirect
-	github.com/m8u/gorgonia v0.10.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/pkg/browser v0.0.0-20210706143420-7d21f8c997e2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/samber/lo v1.27.1 // indirect
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
 	github.com/tkrajina/go-reflector v0.5.5 // indirect
@@ -65,5 +66,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gorgonia.org/cu v0.9.4 // indirect
 	gorgonia.org/dawson v1.2.0 // indirect
+	gorgonia.org/vecf32 v0.9.0 // indirect
 	gorgonia.org/vecf64 v0.9.0 // indirect
 )

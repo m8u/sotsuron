@@ -42,7 +42,7 @@ func Test_generateRandomStructure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			//t.Parallel()
-			layers := generateRandomStructure(tt.args.inputWidth, tt.args.inputHeight, tt.args.numClasses, true)
+			layers := GenerateRandomStructure(DefaultAdvancedConfig(), tt.args.inputWidth, tt.args.inputHeight, tt.args.numClasses, true)
 			model, err := m.NewSequential("")
 			utils.MaybeCrash(err)
 			model.AddLayers(layers...)

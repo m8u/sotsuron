@@ -9,5 +9,9 @@
   },
   "devDependencies": {
     "vite": "^2.9.9"
+  },
+  "dependencies": {
+    "bootstrap": "^5.2.3",
+    "chart.js": "^4.3.0"
   }
 }
