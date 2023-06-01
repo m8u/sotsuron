@@ -6,3 +6,7 @@ import {datasets} from '../models';
 export function Evolve(arg1:evolution.AdvancedConfig,arg2:number,arg3:number,arg4:number):Promise<void>;
 
 export function LoadDataset(arg1:boolean):Promise<datasets.DatasetInfo>;
+
+export function LoadImage():Promise<string>;
+
+export function Predict():Promise<Array<evolution.ClassProbability>>;

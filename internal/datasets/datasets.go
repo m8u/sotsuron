@@ -22,6 +22,10 @@ type Dataset struct {
 	classNames []string
 }
 
+func (dataset *Dataset) ClassNames() []string {
+	return dataset.classNames
+}
+
 func LoadDataset(path string, grayscale bool) (dataset *Dataset, err error) { // TODO: asyncify
 	dataset = &Dataset{path: strings.TrimRight(path, "/\\")}
 	classes, err := os.ReadDir(path)

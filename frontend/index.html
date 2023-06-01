@@ -4,6 +4,23 @@
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>sotsuron</title>
+    <style>
+        body {
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .gradient-foreground:after {
+            position: absolute;
+            bottom: 5%;
+            height: 50%;
+            width: 30%;
+            content: "";
+            background: linear-gradient(to top, rgba(255,255,255, 1) 0%, rgba(255,255,255, 0) 80%);
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
 <div class="text-center" id="app">
@@ -19,8 +36,8 @@
         </div>
     </div>
     <div class="row fixed-bottom p-2 m-1 gap-2 justify-content-center" id="controls">
-        <fieldset class="col-md-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
-            <legend class="small text-primary float-none w-auto px-2">Датасет</legend>
+        <fieldset class="col-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+            <legend class="small text-primary float-none w-auto px-2 ms-2">Датасет</legend>
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="dataset-name" value="-">
                 <label for="dataset-name">Название</label>
@@ -51,8 +68,8 @@
                 </ul>
             </div>
         </fieldset>
-        <fieldset class="col-md-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
-            <legend class="small text-primary float-none w-auto px-2">Эволюция</legend>
+        <fieldset class="col-auto text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+            <legend class="small text-primary float-none w-auto px-2 ms-2">Эволюция</legend>
             <div class="d-flex">
                 <div class="form-floating mx-2">
                     <input type="number" class="form-control" id="config-num-individuals" value="10">
@@ -79,6 +96,52 @@
             </div>
             <div class="progress m-2 visually-hidden" role="progressbar" id="evo-progress-bar">
                 <div class="progress-bar progress-bar-striped progress-bar-animated" id="evo-progress-bar-fill" style="width: 0"></div>
+            </div>
+        </fieldset>
+        <fieldset class="col-4 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+            <legend class="small text-primary float-none w-auto px-2 ms-2">Тестирование</legend>
+            <div class="form-floating">
+                <input type="text" readonly class="form-control-plaintext" id="toy-test-file-name" value="-">
+                <label for="toy-test-file-name">Имя файла</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="toyTest()">
+                Открыть...
+            </button>
+            <div class="form-floating mt-3">
+                <input type="text" readonly class="form-control-plaintext" id="toy-test-predicted-class" value="-">
+                <label for="toy-test-predicted-class">Класс</label>
+            </div>
+            <div class="mx-3 gradient-foreground" id="toy-test-probabilities">
+                <div class="mt-1">
+                    <p class="small text-muted mb-0 text-truncate">-</p>
+                    <div class="progress" style="height: 3px;">
+                        <div class="progress-bar" role="progressbar"></div>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <p class="small text-muted mb-0 text-truncate">-</p>
+                    <div class="progress" style="height: 3px;">
+                        <div class="progress-bar" role="progressbar"></div>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <p class="small text-muted mb-0 text-truncate">-</p>
+                    <div class="progress" style="height: 3px;">
+                        <div class="progress-bar" role="progressbar"></div>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <p class="small text-muted mb-0 text-truncate">-</p>
+                    <div class="progress" style="height: 3px;">
+                        <div class="progress-bar" role="progressbar"></div>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <p class="small text-muted mb-0 text-truncate">-</p>
+                    <div class="progress" style="height: 3px;">
+                        <div class="progress-bar" role="progressbar"></div>
+                    </div>
+                </div>
             </div>
         </fieldset>
     </div>

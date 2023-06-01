@@ -9,3 +9,8 @@ type Progress struct {
 	Individual int
 	ETASeconds float64
 }
+
+type AllChartData struct {
+	Name     string
+	Accuracy float32
+}

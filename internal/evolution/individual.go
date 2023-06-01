@@ -12,6 +12,7 @@ import (
 	"golang.org/x/exp/rand"
 	"gonum.org/v1/gonum/stat"
 	"gorgonia.org/tensor"
+	"sort"
 	"sotsuron/internal/utils"
 	"time"
 )
@@ -125,8 +126,10 @@ func calculateAccuracy(yHat, y tensor.Tensor) (accuracy float32, err error) {
 	return float32(numTrue.Data().(int)) / float32(eqd.Len()), nil
 }
 
-func (individual *Individual) CalculateFitnessBatch(ctx context.Context, advCfg AdvancedConfig, xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
-	epochs := 5
+func (individual *Individual) CalculateFitnessBatch(
+	ctx context.Context, allChartChan chan AllChartData, advCfg AdvancedConfig,
+	xTrain, yTrain, xTest, yTest tensor.Tensor) (fitness float32, err error) {
+	epochs := advCfg.Epochs
 	exampleSize := xTrain.Shape()[0]
 	batches := exampleSize / advCfg.BatchSize
 
@@ -179,10 +182,16 @@ func (individual *Individual) CalculateFitnessBatch(ctx context.Context, advCfg 
 		}
 		evalStartTime = time.Now()
 		accuracy, loss, err = individual.evaluateBatch(ctx, xTest, yTest, advCfg.BatchSize)
-		evalDurations = append(evalDurations, time.Since(evalStartTime).Seconds())
-		if !errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
+			return -1, err
+		} else {
 			utils.MaybeCrash(err)
 		}
+		allChartChan <- AllChartData{
+			Name:     individual.name,
+			Accuracy: accuracy,
+		}
+		evalDurations = append(evalDurations, time.Since(evalStartTime).Seconds())
 		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
 	}
 	err = individual.Tracker.Clear()
@@ -435,4 +444,27 @@ func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual
 			lives:       1,
 		},
 		err1, err2
+}
+
+type ClassProbability struct {
+	ClassName   string
+	Probability float32
+}
+
+func (individual *Individual) Predict(x tensor.Tensor, classNames []string) ([]ClassProbability, error) {
+	prediction, err := individual.Sequential.Predict(x)
+	if err != nil {
+		return nil, err
+	}
+	probabilities := make([]ClassProbability, individual.numClasses)
+	for i := 0; i < individual.numClasses; i++ {
+		probabilities[i] = ClassProbability{
+			ClassName:   classNames[i],
+			Probability: prediction.Data().([]float32)[i],
+		}
+	}
+	sort.Slice(probabilities, func(i, j int) bool {
+		return probabilities[i].Probability > probabilities[j].Probability
+	})
+	return probabilities, nil
 }

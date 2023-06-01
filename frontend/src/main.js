@@ -1,14 +1,13 @@
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "bootstrap/dist/css/bootstrap.min.css";
 import {Chart} from "chart.js/auto";
-import {Evolve, LoadDataset} from '../wailsjs/go/main/App';
+import {Evolve, LoadDataset, LoadImage, Predict} from '../wailsjs/go/main/App';
 import {EventsEmit, EventsOff, EventsOn} from "../wailsjs/runtime";
 
 
 // Chart.defaults.responsive = true;
 Chart.defaults.devicePixelRatio = 2;
 Chart.defaults.maintainAspectRatio = false;
-Chart.defaults.elements.point.pointStyle = false;
 
 function resizeCanvases() {
     const controls = document.querySelector("#controls");
@@ -17,87 +16,85 @@ function resizeCanvases() {
     window.bestChart.resize(window.bestChart.width, height);
 }
 
-function createOrResetCharts(generations, epochs) {
-    if (generations == null) {
-        window.allChart = new Chart(
-            document.getElementById("all-chart-canvas"),
-            {
-                type: "line",
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            data: [],
-                        }
-                    ]
-                },
-                options: {
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: "Точность всех особей в текущем поколении"
-                        },
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        x: {
-                            title: {
-                                display: true,
-                                text: "Итерация обучения"
-                            }
-                        }
-                    }
-                }
-            }
-        );
-
-        window.bestChart = new Chart(
-            document.getElementById("best-chart-canvas"),
-            {
-                type: "line",
-                data: {
-                    labels: [],
-                    datasets: [
-                        {
-                            data: [],
-                        }
-                    ]
-                },
-                options: {
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: "Приспособленность наилучшей особи"
-                        },
-                        legend: {
-                            display: false
-                        },
-                    },
-                    scales: {
-                        x: {
-                            title: {
-                                display: true,
-                                text: "Поколение"
-                            }
-                        }
-                    }
-                }
-            }
-        );
-        return;
+function initAllChart(epochs=10) {
+    if (window.allChart != null) {
+        window.allChart.destroy();
     }
+    window.allChart = new Chart(
+        document.getElementById("all-chart-canvas"),
+        {
+            type: "line",
+            data: {
+                labels: Array.from({length: epochs}, (_, i) => i + 1),
+                datasets: [],
+            },
+            options: {
+                plugins: {
+                    title: {
+                        display: true,
+                        text: "Точность всех особей в текущем поколении"
+                    },
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: "Итерация обучения"
+                        }
+                    }
+                }
+            }
+        }
+    );
+}
 
-    window.allChart.data.labels = Array.from({length: epochs}, (_, i) => i + 1);
-    window.bestChart.data.labels = Array.from({length: generations}, (_, i) => i + 1);
-
-    window.allChart.update();
-    window.bestChart.update();
+function initBestChart(generations=10) {
+    if (window.bestChart != null) {
+        window.bestChart.destroy();
+    }
+    window.bestChart = new Chart(
+        document.getElementById("best-chart-canvas"),
+        {
+            type: "line",
+            data: {
+                labels: Array.from({length: generations}, (_, i) => i + 1),
+                datasets: [
+                    {
+                        data: [],
+                        tension: 0.1,
+                        pointRadius: 1,
+                    }
+                ],
+            },
+            options: {
+                plugins: {
+                    title: {
+                        display: true,
+                        text: "Приспособленность наилучшей особи"
+                    },
+                    legend: {
+                        display: false
+                    },
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: "Поколение"
+                        }
+                    }
+                }
+            }
+        }
+    );
 }
 
 window.onload = async function () {
-    createOrResetCharts();
+    initAllChart();
+    initBestChart();
     resizeCanvases();
     window.addEventListener("resize", resizeCanvases, false);
     resetConfig();
@@ -113,7 +110,7 @@ window.onload = async function () {
 
 window.loadDataset = async function(grayscale) {
     let datasetInfo = await LoadDataset(grayscale);
-    if (datasetInfo == null) {
+    if (!datasetInfo) {
         return;
     }
     document.querySelector("#dataset-name").value = datasetInfo.Name;
@@ -206,21 +203,42 @@ window.evolve = function() {
         }
         progressStatus.innerHTML = `Поколение ${progress.Generation+1} из ${numGenerations}
             ${eta ? " &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; " : ""}${eta}`
-    });
 
-    EventsOn("evo-all-chart", data => {
-        for (let i = 0; i < data.length; i++) {
-            window.allChart.data.datasets[i].data = data[i];
+        if (progress.Generation > window.currentGeneration) {
+            initAllChart(advCfg.Epochs);
         }
+        window.currentGeneration = progress.Generation;
     });
 
-    EventsOn("evo-best-chart", data => {
-
+    EventsOn("evo-all-chart", allChartData => {
+        let i = window.allChart.data.datasets.findIndex(ds => ds.label === allChartData.Name)
+        if (i === -1) {
+            window.allChart.data.datasets.push({
+                label: allChartData.Name,
+                data: [allChartData.Accuracy],
+                borderColor: "#"+Math.floor(Math.random()*16777215).toString(16),
+                tension: 0.1,
+                pointRadius: 1,
+            });
+        } else {
+            window.allChart.data.datasets[i].data.push(allChartData.Accuracy);
+        }
+        window.allChart.update("none");
     });
 
-    createOrResetCharts(numGenerations, advCfg.Epochs);
+    EventsOn("evo-best-chart", bestAccuracy => {
+        console.log("evo-best-chart", bestAccuracy)
+        window.bestChart.data.datasets[0].data.push(bestAccuracy);
+        window.bestChart.update("none");
+    });
 
-    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {});
+    initAllChart(advCfg.Epochs);
+    initBestChart(numGenerations);
+
+    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {
+        EventsOff("evo-progress", "evo-all-chart", "evo-best-chart");
+        console.log("Evolution finished");
+    });
 }
 
 window.isAborting = false;
@@ -229,4 +247,29 @@ window.abortEvolution = function() {
     let progressStatus = document.querySelector("#evo-progress-status");
     progressStatus.innerHTML = "Остановка...";
     EventsEmit("evo-abort");
+}
+
+window.toyTest = async function() {
+    let loadedFilename = await LoadImage();
+    if (!loadedFilename) {
+        return;
+    }
+    document.querySelector("#toy-test-file-name").value = loadedFilename;
+    let probabilities = await Predict()
+    console.log(probabilities);
+    document.querySelector("#toy-test-predicted-class").value = probabilities[0].ClassName;
+    let probabilitiesContainer = document.querySelector("#toy-test-probabilities");
+    probabilitiesContainer.innerHTML = "";
+    for (let i = 0; i < 5; i++) {
+        probabilitiesContainer.innerHTML += `
+            <div class="mt-1">
+                <p class="small text-muted mb-0 text-truncate">${probabilities[i].ClassName}</p>
+                <div class="progress me-2" style="height: 3px;">
+                    <div class="progress-bar" role="progressbar" 
+                        style="width:${probabilities[i].Probability.toFixed(2)*100}%">
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 }

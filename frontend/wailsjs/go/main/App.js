@@ -9,3 +9,11 @@ export function Evolve(arg1, arg2, arg3, arg4) {
 export function LoadDataset(arg1) {
   return window['go']['main']['App']['LoadDataset'](arg1);
 }
+
+export function LoadImage() {
+  return window['go']['main']['App']['LoadImage']();
+}
+
+export function Predict() {
+  return window['go']['main']['App']['Predict']();
+}

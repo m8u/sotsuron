@@ -6,7 +6,6 @@ import (
 	"gorgonia.org/tensor"
 	"log"
 	"sort"
-	"sotsuron/internal/datasets"
 	"sotsuron/internal/utils"
 	"sync"
 	"time"
@@ -33,7 +32,10 @@ func NewSpecies(config AdvancedConfig, numIndividuals, inputWidth, inputHeight, 
 	return species
 }
 
-func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGenerations int, xTrain, yTrain, xTest, yTest tensor.Tensor, progressChan chan Progress) (best *Individual) {
+func (species *Species) Evolve(
+	ctx context.Context, advCfg AdvancedConfig, numGenerations int,
+	xTrain, yTrain, xTest, yTest tensor.Tensor,
+	progressChan chan Progress, allChartChan chan AllChartData, bestChartChan chan float32) {
 	var err error
 	var mu sync.Mutex
 	progress := Progress{}
@@ -50,8 +52,8 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 	//toyTestImages[8], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/ship/1000.png", species.individuals[0].isGrayscale)
 	//toyTestImages[9], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/truck/1000.png", species.individuals[0].isGrayscale)
 	//toyTestClasses := []string{"airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"}
-	unfamiliar, err := datasets.LoadDataset("/home/m8u/Downloads/datasets/mnist_png", species.individuals[0].isGrayscale)
-	unfamiliarX, unfamiliarY, _, _, err := unfamiliar.SplitTrainTest(0.99)
+	//unfamiliar, err := datasets.LoadDataset("/home/m8u/Downloads/datasets/mnist_png", species.individuals[0].isGrayscale)
+	//unfamiliarX, unfamiliarY, _, _, err := unfamiliar.SplitTrainTest(0.99)
 	utils.MaybeCrash(err)
 
 	start := time.Now()
@@ -73,7 +75,7 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 			individual := individual
 			wg.Add(1)
 			go func() {
-				fitness, err := individual.CalculateFitnessBatch(ctx, advCfg, xTrain, yTrain, xTest, yTest)
+				fitness, err := individual.CalculateFitnessBatch(ctx, allChartChan, advCfg, xTrain, yTrain, xTest, yTest)
 				if err != nil {
 					//fmt.Println("WARNING:", err.Error())
 					fmt.Println(individual.name, "has died")
@@ -95,10 +97,8 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("ABORTING...")
-			progress.Generation = -1
-			progressChan <- progress
-			return nil
+			fmt.Println("ABORTING")
+			return
 		default:
 		}
 
@@ -118,6 +118,7 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 			return species.individuals[i].fitness > species.individuals[j].fitness
 		})
 		parent1, parent2 := species.individuals[0], species.individuals[1]
+		bestChartChan <- parent1.fitness
 		//=======================================================================================
 		fmt.Println("_______")
 		fmt.Printf("Best fitness: %v (%v)\n", parent1.fitness, parent1.name)
@@ -137,8 +138,8 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 		//		fmt.Println()
 		//	}
 		//}
-		unfamiliarAccuracy, _, err := parent1.evaluateBatch(ctx, unfamiliarX, unfamiliarY, advCfg.BatchSize)
-		fmt.Printf(" AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO Unfamiliar accuracy: %v\n", unfamiliarAccuracy)
+		//unfamiliarAccuracy, _, err := parent1.evaluateBatch(ctx, unfamiliarX, unfamiliarY, advCfg.BatchSize)
+		//fmt.Printf(" AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO Unfamiliar accuracy: %v\n", unfamiliarAccuracy)
 		if err != nil {
 			fmt.Println("WARNING:", err.Error())
 		}
@@ -147,34 +148,27 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 
 		if i == numGenerations-1 {
 			progress.Generation = -1
-			select {
-			case progressChan <- progress:
-			default:
-			}
-			return parent1
+			progressChan <- progress
+			return
 		}
 		// crossover
-		//child1, child2, err1, err2 := parent1.Crossover(advCfg, parent2)
-		//if err1 != nil && err2 != nil {
-		// if crossover fails, just copy the best 2 individuals
-		child1, err := parent1.Mutate(advCfg, advCfg.MutationChance)
-		utils.MaybeCrash(err)
-		child2, err := parent2.Mutate(advCfg, advCfg.MutationChance)
-		utils.MaybeCrash(err)
-		//}
+		child1, child2, err1, err2 := parent1.Crossover(advCfg, parent2)
+		if err1 != nil && err2 != nil {
+			// if crossover fails, just copy the best 2 individuals
+			child1, err = parent1.Mutate(advCfg, advCfg.MutationChance)
+			utils.MaybeCrash(err)
+			child2, err = parent2.Mutate(advCfg, advCfg.MutationChance)
+			utils.MaybeCrash(err)
+		}
 		// create a new generation
 		var newGeneration []*Individual
 		//if parent1.lives > 0 {
-		//	newGeneration = append(newGeneration, parent1)
-		//	parent1.lives--
-		//}
-		//if parent2.lives > 0 {
-		//	newGeneration = append(newGeneration, parent2)
-		//	parent2.lives--
+		newGeneration = append(newGeneration, parent1)
+		//parent1.lives--
 		//}
 		newGeneration = append(newGeneration, child1, child2, NewIndividual(advCfg, child1.inputRes.Width, child1.inputRes.Height, child1.numClasses, child1.isGrayscale))
 		// mutate N times to fill the rest of new generation
-		mutationChance := (1 - (parent1.fitness+parent2.fitness)/2) * 2
+		mutationChance := 1 - (parent1.fitness+parent2.fitness)/2
 		fmt.Printf(">>>>>> Mutation chance: %v\n", mutationChance)
 		var mutated *Individual
 		for i := 0; len(newGeneration) < species.targetNumIndividuals && i < species.targetNumIndividuals*3; i++ {
@@ -199,4 +193,10 @@ func (species *Species) Evolve(ctx context.Context, advCfg AdvancedConfig, numGe
 		}
 	}
 	return
+}
+
+// Best returns the best individual
+// it is assumed that the individuals are sorted by fitness after Evolve() is called
+func (species *Species) Best() *Individual {
+	return species.individuals[0]
 }
