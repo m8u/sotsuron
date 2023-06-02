@@ -1,17 +1,54 @@
 package evolution
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	m "github.com/m8u/goro/pkg/v1/model"
 	"golang.org/x/exp/rand"
 	"gorgonia.org/tensor"
-	"math"
 	"sotsuron/internal/datasets"
 	"sotsuron/internal/utils"
-	"strings"
 	"testing"
 	"time"
 )
+
+func TestNewIndividual(t *testing.T) {
+	advCfg := DefaultAdvancedConfig()
+	inputWidth, inputHeight, numClasses, grayscale := 28, 28, 10, true
+	for i := 0; i < 1000; i++ {
+		name := uuid.New().String()
+		model, _ := m.NewSequential(name) // TODO: specify metrics
+		model.AddLayers(GenerateRandomStructure(advCfg, inputWidth, inputHeight, numClasses, grayscale)...)
+		var channels int
+		if grayscale {
+			channels = 1
+		} else {
+			channels = 3
+		}
+		err := model.Compile(
+			m.NewInput("x", []int{1, channels, inputHeight, inputWidth}),
+			m.NewInput("y", []int{1, numClasses}),
+			m.WithBatchSize(advCfg.BatchSize),
+		)
+		utils.MaybeCrash(err)
+		individual := &Individual{
+			name:        name,
+			Sequential:  model,
+			inputRes:    utils.Resolution{Width: inputWidth, Height: inputHeight},
+			isGrayscale: grayscale,
+			numClasses:  numClasses,
+			lives:       1,
+		}
+
+		if individual == nil {
+			t.Errorf("NewIndividual() returned nil")
+		}
+
+		individual.DisposeVMs()
+	}
+}
 
 func TestIndividual_Mutate(t *testing.T) {
 	rand.Seed(uint64(time.Now().UnixNano()))
@@ -53,11 +90,11 @@ func TestIndividual_Mutate_repeatedly(t *testing.T) {
 	utils.MaybeCrash(err)
 
 	individual := NewIndividual(DefaultAdvancedConfig(), 28, 28, 10, true)
-	individual.CalculateFitnessBatch(xTrain, yTrain, xTest, yTest)
+	individual.CalculateFitnessBatch(context.Background(), nil, DefaultAdvancedConfig(), xTrain, yTrain, xTest, yTest)
 	individual, _ = individual.Mutate(DefaultAdvancedConfig())
-	individual.CalculateFitnessBatch(xTrain, yTrain, xTest, yTest)
+	individual.CalculateFitnessBatch(context.Background(), nil, DefaultAdvancedConfig(), xTrain, yTrain, xTest, yTest)
 	individual, _ = individual.Mutate(DefaultAdvancedConfig())
-	individual.CalculateFitnessBatch(xTrain, yTrain, xTest, yTest)
+	individual.CalculateFitnessBatch(context.Background(), nil, DefaultAdvancedConfig(), xTrain, yTrain, xTest, yTest)
 }
 
 func TestIndividual_Crossover(t *testing.T) {
@@ -84,7 +121,7 @@ func TestIndividual_Crossover(t *testing.T) {
 			t.Parallel()
 			individual := NewIndividual(DefaultAdvancedConfig(), tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
 			other := NewIndividual(DefaultAdvancedConfig(), tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
-			_, _, err1, err2 := individual.Crossover(other)
+			_, _, err1, err2 := individual.Crossover(DefaultAdvancedConfig(), other)
 			if err1 != nil || err2 != nil {
 				t.Skipf("could not crossover: child1 error: %v, child2 error: %v", err1, err2)
 			}
@@ -110,7 +147,7 @@ func TestIndividual_CalculateFitness(t *testing.T) {
 		wantErr bool
 	}
 	var tests []test
-	dataset, err := datasets.LoadDataset("/home/m8u/Downloads/mnist_png_ultralight", true)
+	dataset, err := datasets.LoadDataset("/home/m8u/code/datasets/mnist_png_ultralight", true)
 	utils.MaybeCrash(err)
 	xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
 	utils.MaybeCrash(err)
@@ -135,25 +172,12 @@ func TestIndividual_CalculateFitness(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			//t.Parallel()
 			individual := NewIndividual(DefaultAdvancedConfig(), tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, true)
-			gotFitness, err := individual.CalculateFitnessBatch(tt.args.xTrain, tt.args.yTrain, tt.args.xTest, tt.args.yTest)
+			gotFitness, err := individual.CalculateFitnessBatch(context.Background(), nil, DefaultAdvancedConfig(), tt.args.xTrain, tt.args.yTrain, tt.args.xTest, tt.args.yTest)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CalculateFitnessBatch() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			fmt.Printf("\nCalculateFitnessBatch() gotFitness = %v\n", gotFitness)
-			img, err := datasets.LoadImage("/home/m8u/Downloads/two.png", true)
-			utils.MaybeCrash(err)
-			pred, err := individual.Predict(img)
-			utils.MaybeCrash(err)
-
-			progressBars := make([]string, len(pred.Data().([]float32)))
-			for i, probability := range pred.Data().([]float32) {
-				if probability < 0 || probability > 99999 || math.IsNaN(float64(probability)) {
-					probability = 0
-				}
-				progressBars[i] = fmt.Sprintf("%d: %s", i, strings.Repeat("#", int(probability*100)))
-			}
-			fmt.Println(strings.Join(progressBars, "\n"))
+			fmt.Println(gotFitness)
 		})
 	}
 }

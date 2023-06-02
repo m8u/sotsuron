@@ -36,8 +36,10 @@ func (species *Species) Evolve(
 	ctx context.Context, advCfg AdvancedConfig, numGenerations int,
 	xTrain, yTrain, xTest, yTest tensor.Tensor,
 	progressChan chan Progress, allChartChan chan AllChartData, bestChartChan chan float32) {
+
 	var err error
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 	progress := Progress{}
 
 	//toyTestImages := make([]tensor.Tensor, 10)
@@ -60,7 +62,6 @@ func (species *Species) Evolve(
 	for i := 0; i < numGenerations; i++ {
 		fmt.Printf("===================================== Generation %d =====================================\n", i)
 		// calculate fitness for each individual
-		var wg sync.WaitGroup
 		for _, individual := range species.individuals {
 			//fmt.Printf("Calculating fitness for %v\n", individual.name)
 			// print individual's structure
@@ -98,6 +99,8 @@ func (species *Species) Evolve(
 		select {
 		case <-ctx.Done():
 			fmt.Println("ABORTING")
+			progress.Generation = -1
+			progressChan <- progress
 			return
 		default:
 		}
@@ -118,7 +121,11 @@ func (species *Species) Evolve(
 			return species.individuals[i].fitness > species.individuals[j].fitness
 		})
 		parent1, parent2 := species.individuals[0], species.individuals[1]
-		bestChartChan <- parent1.fitness
+		select {
+		case bestChartChan <- parent1.fitness:
+		default:
+		}
+
 		//=======================================================================================
 		fmt.Println("_______")
 		fmt.Printf("Best fitness: %v (%v)\n", parent1.fitness, parent1.name)
@@ -147,10 +154,18 @@ func (species *Species) Evolve(
 		//=======================================================================================
 
 		if i == numGenerations-1 {
-			progress.Generation = -1
-			progressChan <- progress
+			if progressChan != nil {
+				progress.Generation = -1
+				progressChan <- progress
+			}
 			return
 		}
+
+		// dispose VMs of obsolete individuals because for an unknown reason GC won't do it
+		for _, individual := range species.individuals[1:] {
+			individual.DisposeVMs()
+		}
+
 		// crossover
 		child1, child2, err1, err2 := parent1.Crossover(advCfg, parent2)
 		if err1 != nil && err2 != nil {
@@ -160,30 +175,30 @@ func (species *Species) Evolve(
 			child2, err = parent2.Mutate(advCfg, advCfg.MutationChance)
 			utils.MaybeCrash(err)
 		}
-		// create a new generation
-		var newGeneration []*Individual
-		//if parent1.lives > 0 {
-		newGeneration = append(newGeneration, parent1)
-		//parent1.lives--
-		//}
-		newGeneration = append(newGeneration, child1, child2, NewIndividual(advCfg, child1.inputRes.Width, child1.inputRes.Height, child1.numClasses, child1.isGrayscale))
+
+		newGeneration := make([]*Individual, species.targetNumIndividuals)
+		newGeneration[0] = NewIndividual(advCfg, child1.inputRes.Width, child1.inputRes.Height, child1.numClasses, child1.isGrayscale)
+		newGeneration[1] = parent1
+		newGeneration[2] = child1
+		newGeneration[3] = child2
 		// mutate N times to fill the rest of new generation
-		mutationChance := 1 - (parent1.fitness+parent2.fitness)/2
+		mutationChance := (1 - (parent1.fitness+parent2.fitness)/2) * 2
 		fmt.Printf(">>>>>> Mutation chance: %v\n", mutationChance)
-		var mutated *Individual
-		for i := 0; len(newGeneration) < species.targetNumIndividuals && i < species.targetNumIndividuals*3; i++ {
-			if i%2 == 0 {
-				mutated, err = child1.Mutate(advCfg, mutationChance)
-			} else {
-				mutated, err = child2.Mutate(advCfg, mutationChance)
-			}
-			if err == nil {
-				newGeneration = append(newGeneration, mutated)
-			}
+		for i := 4; i < len(newGeneration); i++ {
+			wg.Add(1)
+			i := i
+			go func() {
+				if i%2 == 0 {
+					newGeneration[i], err = child1.Mutate(advCfg, mutationChance)
+					utils.MaybeCrash(err)
+				} else {
+					newGeneration[i], err = child2.Mutate(advCfg, mutationChance)
+					utils.MaybeCrash(err)
+				}
+				wg.Done()
+			}()
 		}
-		if len(newGeneration) < len(species.individuals) {
-			log.Fatalln("Not enough individuals for a new generation")
-		}
+		wg.Wait()
 		species.individuals = newGeneration
 		progress.Generation++
 		progress.ETASeconds = time.Since(start).Seconds() / float64(i+1) * float64(numGenerations-i-1)

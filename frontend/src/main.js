@@ -180,15 +180,17 @@ window.evolve = function() {
 
     EventsOn("evo-progress", (progress) => {
         if (progress.Generation === -1) {
+            EventsOff("evo-progress", "evo-all-chart", "evo-best-chart");
+
             startButton.classList.remove("visually-hidden");
             cancelButton.classList.add("visually-hidden");
             progressBar.classList.add("visually-hidden");
             progressBarFill.style.width = "0%";
             progressStatus.innerHTML = window.isAborting ? "Прервано" : "Завершено";
-            EventsOff("evo-progress");
             if (window.isAborting) {
                 window.isAborting = false;
             }
+            console.log("Evolution finished (frontend)");
             return;
         }
         if (window.isAborting) {
@@ -235,10 +237,7 @@ window.evolve = function() {
     initAllChart(advCfg.Epochs);
     initBestChart(numGenerations);
 
-    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {
-        EventsOff("evo-progress", "evo-all-chart", "evo-best-chart");
-        console.log("Evolution finished");
-    });
+    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {});
 }
 
 window.isAborting = false;

@@ -187,9 +187,12 @@ func (individual *Individual) CalculateFitnessBatch(
 		} else {
 			utils.MaybeCrash(err)
 		}
-		allChartChan <- AllChartData{
+		select {
+		case allChartChan <- AllChartData{
 			Name:     individual.name,
 			Accuracy: accuracy,
+		}:
+		default:
 		}
 		evalDurations = append(evalDurations, time.Since(evalStartTime).Seconds())
 		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
@@ -241,7 +244,7 @@ func findNextConv2DIndex(layers []layer.Config, startIndex int) int {
 	return nextConv2DIndex
 }
 
-func (individual *Individual) Mutate(advCfg AdvancedConfig, mutationChance float32) (mutated *Individual, err error) {
+func (individual *Individual) Mutate(advCfg AdvancedConfig, customMutationChance ...float32) (mutated *Individual, err error) {
 	// get a slice of layers of a model
 	layers := make([]layer.Config, len(individual.Chain.Layers))
 	copy(layers, individual.Chain.Layers)
@@ -256,6 +259,11 @@ func (individual *Individual) Mutate(advCfg AdvancedConfig, mutationChance float
 		channels = 1
 	} else {
 		channels = 3
+	}
+
+	mutationChance := advCfg.MutationChance
+	if len(customMutationChance) > 0 {
+		mutationChance = customMutationChance[0]
 	}
 
 	// mutate layers (basically replace with new random ones)
@@ -338,7 +346,7 @@ func (err *CrossoverFailedError) Error() string {
 	return fmt.Sprintf("crossover failed: %v", err.recoverData)
 }
 
-func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
+func (individual *Individual) CrossoverOLD(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
 	// get slices of layers of both models
 	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
 	layersRight := make([]layer.Config, len(other.Chain.Layers))
@@ -409,6 +417,66 @@ func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual
 	if err1 != nil || err2 != nil {
 		return nil, nil, err1, err2
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err1, err2 = &CrossoverFailedError{r}, &CrossoverFailedError{r}
+		}
+	}()
+
+	// create new models with swapped layers
+	child1Name := uuid.New().String()
+	child1Model, _ := m.NewSequential(child1Name)
+	child1Model.AddLayers(layersLeft...)
+	child2Name := uuid.New().String()
+	child2Model, _ := m.NewSequential(child2Name)
+	child2Model.AddLayers(layersRight...)
+
+	// compile models
+	err1 = child1Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
+	err2 = child2Model.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
+
+	return &Individual{
+			name:        child1Name,
+			Sequential:  child1Model,
+			inputRes:    individual.inputRes,
+			isGrayscale: individual.isGrayscale,
+			numClasses:  individual.numClasses,
+			lives:       1,
+		}, &Individual{
+			name:        child2Name,
+			Sequential:  child2Model,
+			inputRes:    individual.inputRes,
+			isGrayscale: individual.isGrayscale,
+			numClasses:  individual.numClasses,
+			lives:       1,
+		},
+		err1, err2
+}
+
+func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
+	// get slices of layers of both models
+	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
+	layersRight := make([]layer.Config, len(other.Chain.Layers))
+	copy(layersLeft, individual.Chain.Layers)
+	copy(layersRight, other.Chain.Layers)
+
+	// find a first FC layer in both models
+	crossoverPointLeft := findFirstFCIndex(layersLeft)
+	crossoverPointRight := findFirstFCIndex(layersRight)
+
+	// swap layers
+	glass := make([]layer.Config, len(layersLeft))
+	copy(glass, layersLeft)
+	layersLeft, layersRight =
+		append(layersLeft[:crossoverPointLeft], layersRight[crossoverPointRight:]...),
+		append(layersRight[:crossoverPointRight], glass[crossoverPointLeft:]...)
+
+	// preserve inputs
+	fcLeft := layersLeft[crossoverPointLeft].(layer.FC)
+	fcRight := layersRight[crossoverPointRight].(layer.FC)
+	fcLeft.Input, fcRight.Input = fcRight.Input, fcLeft.Input
+	layersLeft[crossoverPointLeft], layersRight[crossoverPointRight] = fcLeft, fcRight
 
 	defer func() {
 		if r := recover(); r != nil {

@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	wails "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"gorgonia.org/tensor"
-	"runtime"
+	goRuntime "runtime"
 	"sotsuron/internal/datasets"
 	"sotsuron/internal/evolution"
 	"sotsuron/internal/utils"
@@ -32,7 +32,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) LoadDataset(grayscale bool) *datasets.DatasetInfo {
-	path, err := wails.OpenDirectoryDialog(a.ctx, wails.OpenDialogOptions{
+	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Укажите путь к датасету",
 	})
 	utils.MaybeCrash(err)
@@ -41,7 +41,7 @@ func (a *App) LoadDataset(grayscale bool) *datasets.DatasetInfo {
 	}
 	a.dataset, err = datasets.LoadDataset(path, grayscale)
 	if err != nil {
-		wails.EventsEmit(a.ctx, "error", "Не удалось загрузить датасет")
+		runtime.EventsEmit(a.ctx, "error", "Не удалось загрузить датасет")
 		return nil
 	}
 	return a.dataset.GetInfo()
@@ -60,58 +60,52 @@ func (a *App) Evolve(advCfg evolution.AdvancedConfig, trainTestRatio float32, nu
 	xTrain, yTrain, xTest, yTest, err := a.dataset.SplitTrainTest(trainTestRatio)
 	utils.MaybeCrash(err)
 
-	ctx, cancel := context.WithCancel(a.ctx)
-	wails.EventsOnce(a.ctx, "evo-abort", func(optionalData ...interface{}) {
-		cancel()
-	})
+	shouldStop := false
 	progressChan := make(chan evolution.Progress)
 	go func() {
 		for {
-			select {
-			case progress := <-progressChan:
-				wails.EventsEmit(a.ctx, "evo-progress", progress)
-			case <-ctx.Done():
-				wails.EventsEmit(a.ctx, "evo-progress", evolution.Progress{
-					Generation: -1,
-				})
+			progress := <-progressChan
+			fmt.Println("GENERATION", progress.Generation)
+			runtime.EventsEmit(a.ctx, "evo-progress", progress)
+			if progress.Generation == -1 {
 				return
-			default:
 			}
 		}
 	}()
 	allChartChan := make(chan evolution.AllChartData)
 	go func() {
-		for {
-			select {
-			case data := <-allChartChan:
-				wails.EventsEmit(a.ctx, "evo-all-chart", data)
-			case <-ctx.Done():
-				return
-			default:
-			}
+		for !shouldStop {
+			data := <-allChartChan
+			runtime.EventsEmit(a.ctx, "evo-all-chart", data)
 		}
 	}()
 	bestChartChan := make(chan float32)
 	go func() {
-		for {
-			select {
-			case data := <-bestChartChan:
-				wails.EventsEmit(a.ctx, "evo-best-chart", data)
-			case <-ctx.Done():
-				return
-			default:
-			}
+		for !shouldStop {
+			data := <-bestChartChan
+			runtime.EventsEmit(a.ctx, "evo-best-chart", data)
 		}
+	}()
+	ctx, cancel := context.WithCancel(a.ctx)
+	runtime.EventsOnce(a.ctx, "evo-abort", func(optionalData ...interface{}) {
+		cancel()
+	})
+	go func() {
+		<-ctx.Done()
 	}()
 
 	a.species.Evolve(ctx, advCfg, numGenerations, xTrain, yTrain, xTest, yTest, progressChan, allChartChan, bestChartChan)
 	fmt.Println("Evolution finished (backend)")
+	shouldStop = true
 	cancel()
-	wails.EventsOffAll(a.ctx)
+	close(progressChan)
+	close(allChartChan)
+	close(bestChartChan)
+	runtime.EventsOffAll(a.ctx)
 }
 
 func (a *App) LoadImage() (loadedFilename string) {
-	path, err := wails.OpenFileDialog(a.ctx, wails.OpenDialogOptions{
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Укажите путь к изображению",
 	})
 	utils.MaybeCrash(err)
@@ -121,7 +115,7 @@ func (a *App) LoadImage() (loadedFilename string) {
 	a.testImg, err = datasets.LoadImage(path, a.dataset.GetInfo().Grayscale)
 	utils.MaybeCrash(err)
 
-	if runtime.GOOS == "windows" {
+	if goRuntime.GOOS == "windows" {
 		return strings.Split(path, "\\")[len(strings.Split(path, "\\"))-1]
 	}
 	return strings.Split(path, "/")[len(strings.Split(path, "/"))-1]
