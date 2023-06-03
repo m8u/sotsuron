@@ -90,18 +90,13 @@ func (a *App) Evolve(advCfg evolution.AdvancedConfig, trainTestRatio float32, nu
 	runtime.EventsOnce(a.ctx, "evo-abort", func(optionalData ...interface{}) {
 		cancel()
 	})
-	go func() {
-		<-ctx.Done()
-	}()
 
 	a.species.Evolve(ctx, advCfg, numGenerations, xTrain, yTrain, xTest, yTest, progressChan, allChartChan, bestChartChan)
 	fmt.Println("Evolution finished (backend)")
 	shouldStop = true
-	cancel()
 	close(progressChan)
 	close(allChartChan)
 	close(bestChartChan)
-	runtime.EventsOffAll(a.ctx)
 }
 
 func (a *App) LoadImage() (loadedFilename string) {

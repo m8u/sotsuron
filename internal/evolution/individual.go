@@ -187,12 +187,9 @@ func (individual *Individual) CalculateFitnessBatch(
 		} else {
 			utils.MaybeCrash(err)
 		}
-		select {
-		case allChartChan <- AllChartData{
+		allChartChan <- AllChartData{
 			Name:     individual.name,
 			Accuracy: accuracy,
-		}:
-		default:
 		}
 		evalDurations = append(evalDurations, time.Since(evalStartTime).Seconds())
 		//log.Infof("completed train epoch %v with accuracy %v and loss %v", epoch, accuracy, loss)
