@@ -5,17 +5,21 @@ import {initAllChart, initBestChart} from "./charts";
 
 function resizeCanvases() {
     const controls = document.querySelector("#controls");
-    const height = window.innerHeight - controls.offsetHeight - 30;
+    const height = window.innerHeight - controls.offsetHeight - 50;
     window.allChart.resize(window.allChart.width, height);
     window.bestChart.resize(window.bestChart.width, height);
+    if (window.visualizationCanvas) {
+        window.visualizationCanvas.height = height;
+    }
 }
 
 window.onload = async function () {
     initAllChart();
     initBestChart();
+    resetAdvancedConfig();
+
     resizeCanvases();
     window.addEventListener("resize", resizeCanvases, false);
-    resetConfig();
 
     let liveToast = document.querySelector("#live-toast")
     let liveToastBody = document.querySelector("#live-toast-body")

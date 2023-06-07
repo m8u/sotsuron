@@ -3,6 +3,7 @@ package evolution
 import (
 	"context"
 	"fmt"
+	"github.com/m8u/goro/pkg/v1/layer"
 	"gorgonia.org/tensor"
 	"log"
 	"sort"
@@ -35,39 +36,18 @@ func NewSpecies(config AdvancedConfig, numIndividuals, inputWidth, inputHeight, 
 func (species *Species) Evolve(
 	ctx context.Context, advCfg AdvancedConfig, numGenerations int,
 	xTrain, yTrain, xTest, yTest tensor.Tensor,
-	progressChan chan Progress, allChartChan chan AllChartData, bestChartChan chan float32) {
+	progressChan chan Progress, allChartChan chan AllChartData, bestChartChan chan float32, bestLayersChan chan []layer.Config) {
 
 	var err error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	progress := Progress{}
 
-	//toyTestImages := make([]tensor.Tensor, 10)
-	//toyTestImages[0], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/airplane/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[1], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/automobile/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[2], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/bird/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[3], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/cat/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[4], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/deer/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[5], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/dog/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[6], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/frog/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[7], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/horse/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[8], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/ship/1000.png", species.individuals[0].isGrayscale)
-	//toyTestImages[9], err = datasets.LoadImage("/home/m8u/Downloads/datasets/cifar10_10k/truck/1000.png", species.individuals[0].isGrayscale)
-	//toyTestClasses := []string{"airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"}
-	//unfamiliar, err := datasets.LoadDataset("/home/m8u/Downloads/datasets/mnist_png", species.individuals[0].isGrayscale)
-	//unfamiliarX, unfamiliarY, _, _, err := unfamiliar.SplitTrainTest(0.99)
-	utils.MaybeCrash(err)
-
 	start := time.Now()
 	for i := 0; i < numGenerations; i++ {
 		fmt.Printf("===================================== Generation %d =====================================\n", i)
 		// calculate fitness for each individual
 		for _, individual := range species.individuals {
-			//fmt.Printf("Calculating fitness for %v\n", individual.name)
-			// print individual's structure
-			//for _, layer := range individual.Chain.Layers {
-			//	fmt.Printf("%v\n", layer)
-			//}
 			if individual.trained {
 				fmt.Printf("Skipping %v\n", individual.name)
 				progress.Individual++
@@ -125,33 +105,10 @@ func (species *Species) Evolve(
 		case bestChartChan <- parent1.fitness:
 		default:
 		}
-
-		//=======================================================================================
-		fmt.Println("_______")
-		fmt.Printf("Best fitness: %v (%v)\n", parent1.fitness, parent1.name)
-		// print layers of the best individual
-		for _, layer := range parent1.Chain.Layers {
-			fmt.Printf("%+v\n", layer)
+		select {
+		case bestLayersChan <- parent1.Chain.Layers:
+		default:
 		}
-		fmt.Println("_______")
-		//for i, img := range toyTestImages {
-		//	pred, err := parent1.Predict(img)
-		//	utils.MaybeCrash(err)
-		//	maxIndex := vecf32.Argmax(pred.Data().([]float32))
-		//	fmt.Printf("Predicted: %s, Actual: %s", toyTestClasses[maxIndex], toyTestClasses[i])
-		//	if maxIndex == i {
-		//		fmt.Println(" +")
-		//	} else {
-		//		fmt.Println()
-		//	}
-		//}
-		//unfamiliarAccuracy, _, err := parent1.evaluateBatch(ctx, unfamiliarX, unfamiliarY, advCfg.BatchSize)
-		//fmt.Printf(" AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO  AYO Unfamiliar accuracy: %v\n", unfamiliarAccuracy)
-		if err != nil {
-			fmt.Println("WARNING:", err.Error())
-		}
-		fmt.Println("********")
-		//=======================================================================================
 
 		if i == numGenerations-1 {
 			if progressChan != nil {
@@ -211,7 +168,10 @@ func (species *Species) Evolve(
 }
 
 // Best returns the best individual
-// it is assumed that the individuals are sorted by fitness after Evolve() is called
 func (species *Species) Best() *Individual {
 	return species.individuals[0]
 }
+
+// TODO старые графики в allChart не удаляются (вроде как только если через браузер открывать)
+// TODO аперитивка все равно заполняется чето сильно
+// TODO есть минимум размера поколения

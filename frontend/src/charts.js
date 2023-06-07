@@ -79,3 +79,24 @@ export function initBestChart(generations=10) {
         }
     );
 }
+
+export function updateAllChart(data) {
+    let i = window.allChart.data.datasets.findIndex(ds => ds.label === data.Name)
+    if (i === -1) {
+        window.allChart.data.datasets.push({
+            label: data.Name,
+            data: [data.Accuracy],
+            borderColor: "#"+Math.floor(Math.random()*16777215).toString(16),
+            tension: 0.1,
+            pointRadius: 1,
+        });
+    } else {
+        window.allChart.data.datasets[i].data.push(data.Accuracy);
+    }
+    window.allChart.update("none");
+}
+
+export function updateBestChart(accuracy) {
+    window.bestChart.data.datasets[0].data.push(accuracy);
+    window.bestChart.update("none");
+}

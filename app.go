@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/m8u/goro/pkg/v1/layer"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"gorgonia.org/tensor"
 	goRuntime "runtime"
@@ -86,17 +87,28 @@ func (a *App) Evolve(advCfg evolution.AdvancedConfig, trainTestRatio float32, nu
 			runtime.EventsEmit(a.ctx, "evo-best-chart", data)
 		}
 	}()
+	bestLayersChan := make(chan []layer.Config)
+	go func() {
+		for !shouldStop {
+			bestLayers := <-bestLayersChan
+			if bestLayers == nil {
+				return
+			}
+			runtime.EventsEmit(a.ctx, "evo-best-layers", evolution.SimplifyLayers(bestLayers))
+		}
+	}()
 	ctx, cancel := context.WithCancel(a.ctx)
 	runtime.EventsOnce(a.ctx, "evo-abort", func(optionalData ...interface{}) {
 		cancel()
 	})
 
-	a.species.Evolve(ctx, advCfg, numGenerations, xTrain, yTrain, xTest, yTest, progressChan, allChartChan, bestChartChan)
+	a.species.Evolve(ctx, advCfg, numGenerations, xTrain, yTrain, xTest, yTest, progressChan, allChartChan, bestChartChan, bestLayersChan)
 	fmt.Println("Evolution finished (backend)")
 	shouldStop = true
 	close(progressChan)
 	close(allChartChan)
 	close(bestChartChan)
+	close(bestLayersChan)
 }
 
 func (a *App) LoadImage() (loadedFilename string) {

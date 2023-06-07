@@ -7,7 +7,6 @@ window.toyTest = async function() {
     }
     document.querySelector("#toy-test-file-name").value = loadedFilename;
     let probabilities = await Predict()
-    console.log(probabilities);
     document.querySelector("#toy-test-predicted-class").value = probabilities[0].ClassName;
     let probabilitiesContainer = document.querySelector("#toy-test-probabilities");
     probabilitiesContainer.innerHTML = "";

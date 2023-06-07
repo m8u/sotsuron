@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "bootstrap": "^5.2.3",
-    "chart.js": "^4.3.0"
+    "chart.js": "^4.3.0",
+    "gl-matrix": "^3.4.3"
   }
 }

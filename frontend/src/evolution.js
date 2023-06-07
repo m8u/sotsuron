@@ -1,30 +1,15 @@
-import {EventsEmit, EventsOff, EventsOn} from "../wailsjs/runtime";
+import {EventsEmit, EventsOff, EventsOn, LogDebug} from "../wailsjs/runtime";
 import {Evolve} from "../wailsjs/go/main/App";
-import {initAllChart, initBestChart} from "./charts";
+import {initAllChart, initBestChart, updateAllChart, updateBestChart} from "./charts";
+import {getAdvancedConfig} from "./advancedConfig";
+import {initVisualization, pushBestLayers} from "./visualization";
 
 window.evolve = function() {
     let trainTestRatio = parseFloat(document.querySelector("#config-train-test-ratio").value);
     let numIndividuals = parseInt(document.querySelector("#config-num-individuals").value);
     let numGenerations = parseInt(document.querySelector("#config-num-generations").value);
-    let advCfg = {
-        Epochs: parseInt(document.querySelector("#config-epochs").value),
-        BatchSize: parseInt(document.querySelector("#config-batch-size").value),
-
-        MutationChance: parseFloat(document.querySelector("#config-mutation-chance").value),
-
-        MaxConvMaxPoolingPairs: parseInt(document.querySelector("#config-max-conv-max-pooling-pairs").value),
-        MaxConvOutput: parseInt(document.querySelector("#config-max-conv-output").value),
-        MaxConvKernelSize: parseInt(document.querySelector("#config-max-conv-kernel-size").value),
-        MaxConvPad: parseInt(document.querySelector("#config-max-conv-pad").value),
-        MaxConvStride: parseInt(document.querySelector("#config-max-conv-stride").value),
-        MaxPoolKernelSize: parseInt(document.querySelector("#config-max-pool-kernel-size").value),
-        MaxPoolPad: parseInt(document.querySelector("#config-max-pool-pad").value),
-        MaxPoolStride: parseInt(document.querySelector("#config-max-pool-stride").value),
-        MaxDenseLayers: parseInt(document.querySelector("#config-max-dense-layers").value),
-        MaxDenseSize: parseInt(document.querySelector("#config-max-dense-size").value),
-        MinResolutionWidth: parseInt(document.querySelector("#config-min-resolution-width").value),
-        MinResolutionHeight: parseInt(document.querySelector("#config-min-resolution-height").value),
-    }
+    LogDebug(numGenerations.toString());
+    let advCfg= getAdvancedConfig();
 
     let progressBar = document.querySelector("#evo-progress-bar");
     let progressBarFill = document.querySelector("#evo-progress-bar-fill");
@@ -37,10 +22,10 @@ window.evolve = function() {
     progressStatus.classList.remove("visually-hidden");
     progressBar.classList.remove("visually-hidden");
 
+    EventsOff("evo-progress", "evo-all-chart", "evo-best-chart", "evo-best-layers");
+
     EventsOn("evo-progress", (progress) => {
         if (progress.Generation === -1) {
-            EventsOff("evo-progress");
-
             startButton.classList.remove("visually-hidden");
             cancelButton.classList.add("visually-hidden");
             progressBar.classList.add("visually-hidden");
@@ -49,7 +34,8 @@ window.evolve = function() {
             if (window.isAborting) {
                 window.isAborting = false;
             }
-            console.log("Evolution finished (frontend)");
+
+            LogDebug("Evolution finished (frontend)");
             return;
         }
         if (window.isAborting) {
@@ -62,6 +48,7 @@ window.evolve = function() {
             let minutes = Math.ceil(progress.ETASeconds / 60);
             eta = `Осталось ~ ${minutes} мин.`;
         }
+        LogDebug(numGenerations.toString());
         progressStatus.innerHTML = `Поколение ${progress.Generation+1} из ${numGenerations}
             ${eta ? " &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; " : ""}${eta}`
 
@@ -72,35 +59,19 @@ window.evolve = function() {
     });
 
     EventsOn("evo-all-chart", allChartData => {
-        let i = window.allChart.data.datasets.findIndex(ds => ds.label === allChartData.Name)
-        if (i === -1) {
-            window.allChart.data.datasets.push({
-                label: allChartData.Name,
-                data: [allChartData.Accuracy],
-                borderColor: "#"+Math.floor(Math.random()*16777215).toString(16),
-                tension: 0.1,
-                pointRadius: 1,
-            });
-        } else {
-            window.allChart.data.datasets[i].data.push(allChartData.Accuracy);
-        }
-        window.allChart.update("none");
+        updateAllChart(allChartData);
     });
-
     EventsOn("evo-best-chart", bestAccuracy => {
-        console.log("evo-best-chart", bestAccuracy)
-        window.bestChart.data.datasets[0].data.push(bestAccuracy);
-        window.bestChart.update("none");
+        updateBestChart(bestAccuracy);
     });
-
+    EventsOn("evo-best-layers", bestLayers => {
+        pushBestLayers(bestLayers);
+    });
     initAllChart(advCfg.Epochs);
     initBestChart(numGenerations);
+    initVisualization();
 
-    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {
-        setTimeout(function() {
-            EventsOff("evo-all-chart", "evo-best-chart");
-        }, 1000);
-    });
+    Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {});
 }
 
 window.isAborting = false;
