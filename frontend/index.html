@@ -24,19 +24,20 @@
 </head>
 <body>
 <div class="text-center" id="app">
-    <div class="row p-3 justify-content-center">
-        <div class="col-auto" id="all-chart-canvas-container">
+    <div class="row flex-nowrap p-3 justify-content-center">
+        <div class="col-auto">
             <canvas id="all-chart-canvas"></canvas>
         </div>
-        <div class="col-auto" id="best-chart-canvas-container">
+        <div class="col-auto">
             <canvas id="best-chart-canvas"></canvas>
         </div>
-        <div class="col-auto" id="visualization-canvas-container">
-            <canvas id="visualization-canvas"></canvas>
-        </div>
+        <fieldset class="col-auto  rounded mb-1 me-3 flex-fill p-0">
+            <legend class="small text-secondary float-none w-auto px-2 ms-2">Структура наилучшей СНС</legend>
+            <canvas class="rounded p-0 m-0" id="visualization-canvas"></canvas>
+        </fieldset>
     </div>
-    <div class="row fixed-bottom p-2 m-1 gap-2 justify-content-center" id="controls">
-        <fieldset class="col-2 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+    <div class="row fixed-bottom p-2 m-1 gap-1 justify-content-center" id="controls">
+        <fieldset class="col-3 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
             <legend class="small text-primary float-none w-auto px-2 ms-2">Датасет</legend>
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="dataset-name" value="-">
@@ -68,7 +69,7 @@
                 </ul>
             </div>
         </fieldset>
-        <fieldset class="col-4 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+        <fieldset class="col-5 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
             <legend class="small text-primary float-none w-auto px-2 ms-2">Эволюция</legend>
             <div class="form-floating mx-2">
                 <input type="number" class="form-control" id="config-num-individuals" value="10">
@@ -94,7 +95,7 @@
                 <div class="progress-bar progress-bar-striped progress-bar-animated" id="evo-progress-bar-fill" style="width: 0"></div>
             </div>
         </fieldset>
-        <fieldset class="col-2 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
+        <fieldset class="col-3 text-start border border-primary rounded-3 p-1 pt-0 pb-3">
             <legend class="small text-primary float-none w-auto px-2 ms-2">Тестирование</legend>
             <div class="form-floating">
                 <input type="text" readonly class="form-control-plaintext" id="toy-test-file-name" value="-">
