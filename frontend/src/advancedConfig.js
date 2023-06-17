@@ -2,7 +2,7 @@ window.resetAdvancedConfig = function() {
     document.querySelector("#config-train-test-ratio").value = 0.8;
     document.querySelector("#config-epochs").value = 5;
     document.querySelector("#config-batch-size").value = 10;
-    document.querySelector("#config-mutation-chance").value = 0.3;
+    document.querySelector("#config-mutation-multiplier").value = 1.0;
     document.querySelector("#config-max-conv-max-pooling-pairs").value = 3;
     document.querySelector("#config-max-conv-output").value = 16;
     document.querySelector("#config-max-conv-kernel-size").value = 8;
@@ -22,7 +22,7 @@ export function getAdvancedConfig() {
         Epochs: parseInt(document.querySelector("#config-epochs").value),
         BatchSize: parseInt(document.querySelector("#config-batch-size").value),
 
-        MutationChance: parseFloat(document.querySelector("#config-mutation-chance").value),
+        MutationMultiplier: parseFloat(document.querySelector("#config-mutation-multiplier").value),
 
         MaxConvMaxPoolingPairs: parseInt(document.querySelector("#config-max-conv-max-pooling-pairs").value),
         MaxConvOutput: parseInt(document.querySelector("#config-max-conv-output").value),

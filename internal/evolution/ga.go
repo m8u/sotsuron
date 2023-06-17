@@ -7,7 +7,6 @@ import (
 	"gorgonia.org/tensor"
 	"log"
 	"sort"
-	"sotsuron/internal/utils"
 	"sync"
 	"time"
 )
@@ -88,6 +87,7 @@ func (species *Species) Evolve(
 		// eliminate individuals that have failed to train
 		for i := 0; i < len(species.individuals); i++ {
 			if !species.individuals[i].trained {
+				species.individuals[i].DisposeVMs()
 				species.individuals = append(species.individuals[:i], species.individuals[i+1:]...)
 				i--
 			}
@@ -126,36 +126,31 @@ func (species *Species) Evolve(
 		// crossover
 		child1, child2, err1, err2 := parent1.Crossover(advCfg, parent2)
 		if err1 != nil && err2 != nil {
-			// if crossover fails, just copy the best 2 individuals
-			child1, err = parent1.Mutate(advCfg, advCfg.MutationChance)
-			utils.MaybeCrash(err)
-			child2, err = parent2.Mutate(advCfg, advCfg.MutationChance)
-			utils.MaybeCrash(err)
+			// if crossover failed, use alternative method
+			child1, child2, err1, err2 = parent1.CrossoverAlt(advCfg, parent2)
 		}
 
-		newGeneration := make([]*Individual, species.targetNumIndividuals)
-		newGeneration[0] = NewIndividual(advCfg, child1.inputRes.Width, child1.inputRes.Height, child1.numClasses, child1.isGrayscale)
-		newGeneration[1] = parent1
-		newGeneration[2] = child1
-		newGeneration[3] = child2
+		var newGeneration []*Individual
+		newGeneration = append(newGeneration, parent1, child1, child2)
 		// mutate N times to fill the rest of new generation
-		mutationChance := (1 - (parent1.fitness+parent2.fitness)/2) * 2
-		fmt.Printf(">>>>>> Mutation chance: %v\n", mutationChance)
-		for i := 4; i < len(newGeneration); i++ {
-			wg.Add(1)
-			i := i
-			go func() {
-				if i%2 == 0 {
-					newGeneration[i], err = child1.Mutate(advCfg, mutationChance)
-					utils.MaybeCrash(err)
-				} else {
-					newGeneration[i], err = child2.Mutate(advCfg, mutationChance)
-					utils.MaybeCrash(err)
-				}
-				wg.Done()
-			}()
+		mutationChance := (1 - (parent1.fitness+parent2.fitness)/2) * advCfg.MutationMultiplier
+		fmt.Printf(">>>>>> Mutation chance: %v\n", mutationChance) // TODO: запилить тост об ошибке
+		var mutated *Individual
+		for i := 0; len(newGeneration) < species.targetNumIndividuals && i < species.targetNumIndividuals*3; i++ {
+			fmt.Println("Mutating", i)
+			if i%2 == 0 {
+				mutated, err = child1.Mutate(advCfg, mutationChance)
+			} else {
+				mutated, err = child2.Mutate(advCfg, mutationChance)
+			}
+			if err == nil {
+				newGeneration = append(newGeneration, mutated)
+			} else {
+				//fmt.Println("WARNING:", err.Error())
+				fmt.Println("did not survive mutation")
+			}
+
 		}
-		wg.Wait()
 		species.individuals = newGeneration
 		progress.Generation++
 		progress.ETASeconds = time.Since(start).Seconds() / float64(i+1) * float64(numGenerations-i-1)

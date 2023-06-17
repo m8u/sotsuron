@@ -2,7 +2,7 @@ import {EventsEmit, EventsOff, EventsOn, LogDebug} from "../wailsjs/runtime";
 import {Evolve} from "../wailsjs/go/main/App";
 import {initAllChart, initBestChart, updateAllChart, updateBestChart} from "./charts";
 import {getAdvancedConfig} from "./advancedConfig";
-import {initVisualization, pushBestLayers} from "./visualization";
+import {initBestStructureBlock, pushBestLayers} from "./bestStructure";
 
 window.evolve = function() {
     let trainTestRatio = parseFloat(document.querySelector("#config-train-test-ratio").value);
@@ -14,6 +14,7 @@ window.evolve = function() {
     let progressBar = document.querySelector("#evo-progress-bar");
     let progressBarFill = document.querySelector("#evo-progress-bar-fill");
     let progressStatus = document.querySelector("#evo-progress-status");
+    let progressETA = document.querySelector("#evo-progress-eta");
     let startButton = document.querySelector("#evo-start-button");
     let cancelButton = document.querySelector("#evo-cancel-button");
     startButton.classList.add("visually-hidden");
@@ -31,6 +32,7 @@ window.evolve = function() {
             progressBar.classList.add("visually-hidden");
             progressBarFill.style.width = "0%";
             progressStatus.innerHTML = window.isAborting ? "Прервано" : "Завершено";
+            progressETA.innerHTML = "";
             if (window.isAborting) {
                 window.isAborting = false;
             }
@@ -43,14 +45,13 @@ window.evolve = function() {
         }
         progressBarFill.style.width = progress.Individual / (numIndividuals * numGenerations) * 100 + "%";
 
+        progressStatus.innerHTML = `Поколение ${progress.Generation+1} из ${numGenerations}`
         let eta = "";
         if (progress.ETASeconds > 1) {
             let minutes = Math.ceil(progress.ETASeconds / 60);
             eta = `Осталось ~ ${minutes} мин.`;
         }
-        LogDebug(numGenerations.toString());
-        progressStatus.innerHTML = `Поколение ${progress.Generation+1} из ${numGenerations}
-            ${eta ? " &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; " : ""}${eta}`
+        progressETA.innerHTML = eta;
 
         if (progress.Generation > window.currentGeneration) {
             initAllChart(advCfg.Epochs);
@@ -69,7 +70,7 @@ window.evolve = function() {
     });
     initAllChart(advCfg.Epochs);
     initBestChart(numGenerations);
-    initVisualization();
+    initBestStructureBlock();
 
     Evolve(advCfg, trainTestRatio, numIndividuals, numGenerations).then(() => {});
 }

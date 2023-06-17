@@ -4,7 +4,7 @@ type AdvancedConfig struct {
 	Epochs    int
 	BatchSize int
 
-	MutationChance float32
+	MutationMultiplier float32
 
 	MaxConvMaxPoolingPairs int
 	MaxConvOutput          int
@@ -25,7 +25,7 @@ func DefaultAdvancedConfig() AdvancedConfig {
 		Epochs:    5,
 		BatchSize: 10,
 
-		MutationChance: 0.3,
+		MutationMultiplier: 1.0,
 
 		MaxConvMaxPoolingPairs: 3,
 		MaxConvOutput:          16,

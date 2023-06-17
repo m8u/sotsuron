@@ -200,7 +200,7 @@ func (individual *Individual) CalculateFitnessBatch(
 	return accuracy*1.0 + -1*loss*0.5, err
 }
 
-func getPrevOutput(layers []layer.Config, startIndex int, grayscale bool) int {
+func getPrevConv2DOutput(layers []layer.Config, startIndex int, grayscale bool) int {
 	lastConv2DIndex := startIndex
 	for i := startIndex - 1; i >= 0; i-- {
 		if _, ok := layers[i].(layer.Conv2D); ok {
@@ -241,6 +241,12 @@ func findNextConv2DIndex(layers []layer.Config, startIndex int) int {
 	return nextConv2DIndex
 }
 
+type MutationFailedError struct{}
+
+func (err MutationFailedError) Error() string {
+	return fmt.Sprintf("mutation failed")
+}
+
 func (individual *Individual) Mutate(advCfg AdvancedConfig, customMutationChance ...float32) (mutated *Individual, err error) {
 	// get a slice of layers of a model
 	layers := make([]layer.Config, len(individual.Chain.Layers))
@@ -251,19 +257,13 @@ func (individual *Individual) Mutate(advCfg AdvancedConfig, customMutationChance
 		Width:  input[1],
 		Height: input[0],
 	}
-	var channels int
-	if individual.isGrayscale {
-		channels = 1
-	} else {
-		channels = 3
-	}
 
-	mutationChance := advCfg.MutationChance
+	var mutationChance float32 = 0.2
 	if len(customMutationChance) > 0 {
 		mutationChance = customMutationChance[0]
 	}
 
-	// mutate layers (basically replace with new random ones)
+	// mutate layers
 	for i := 0; i < len(layers)-1; i++ {
 		if _, ok := layers[i].(layer.Flatten); ok {
 			continue
@@ -271,49 +271,112 @@ func (individual *Individual) Mutate(advCfg AdvancedConfig, customMutationChance
 
 		if rand.Float32() < mutationChance {
 			//println("----------------------------- mutating layer", i, "-----------------------------")
+			shouldDelete, shouldInsert := rand.Float32() < 0.5, rand.Float32() < 0.5
+
 			if _, ok := layers[i].(layer.Conv2D); ok {
-				prevOutput := channels
-				if i > 0 {
-					prevOutput = getPrevOutput(layers, i, individual.isGrayscale)
+				prevOutput := getPrevConv2DOutput(layers, i, individual.isGrayscale) // TODO: maybe return back setting channels as default
+				if shouldDelete {
+					fmt.Println("deleting Conv2D layer")
+					layers = append(layers[:i], layers[i+1:]...)
+					i--
+				} else {
+					conv2D, err := GenerateRandomConv2D(advCfg, prevOutput, res, layers[i+1:]...)
+					if err != nil {
+						return nil, err
+					}
+					layers[i] = conv2D
+					prevOutput = conv2D.Output
+					res = res.After(conv2D)
+
+					if shouldInsert {
+						fmt.Println("inserting Conv2D layer")
+						newConv2D, err := GenerateRandomConv2D(advCfg, prevOutput, res, layers[i+1:]...)
+						if err != nil {
+							fmt.Println("WARNING: failed to generate new Conv2D layer", err)
+							goto updateNextConv2DInput
+						}
+						layers = append(layers[:i+1], append([]layer.Config{newConv2D}, layers[i+1:]...)...)
+						prevOutput = newConv2D.Output
+						res = res.After(newConv2D)
+						i++
+					}
 				}
-				conv2D, err := GenerateRandomConv2D(advCfg, prevOutput, res, layers[i+1:]...)
-				if err != nil {
-					return nil, err
-				}
-				layers[i] = conv2D
 				// update input of next Conv2D layer, if any
+			updateNextConv2DInput:
 				nextConv2DIndex := findNextConv2DIndex(layers, i)
 				if nextConv2DIndex > -1 {
 					nextConv2D := layers[nextConv2DIndex].(layer.Conv2D)
-					nextConv2D.Input = conv2D.Output
+					nextConv2D.Input = prevOutput
 					layers[nextConv2DIndex] = nextConv2D
 				}
-				res = res.After(conv2D)
 			} else if _, ok := layers[i].(layer.MaxPooling2D); ok {
-				maxPooling2D, err := GenerateRandomMaxPooling2D(advCfg, res, layers[i+1:]...)
-				if err != nil {
-					return nil, err
+				if shouldDelete {
+					fmt.Println("deleting MaxPooling2D layer")
+					layers = append(layers[:i], layers[i+1:]...)
+					i--
+				} else {
+					maxPooling2D, err := GenerateRandomMaxPooling2D(advCfg, res, layers[i+1:]...)
+					if err != nil {
+						return nil, err
+					}
+					layers[i] = maxPooling2D
+					res = res.After(maxPooling2D)
+
+					if shouldInsert {
+						fmt.Println("inserting MaxPooling2D layer")
+						newMaxPooling2D, err := GenerateRandomMaxPooling2D(advCfg, res, layers[i+1:]...)
+						if err != nil {
+							fmt.Println("WARNING: failed to generate new MaxPooling2D layer", err)
+							continue
+						}
+						layers = append(layers[:i+1], append([]layer.Config{newMaxPooling2D}, layers[i+1:]...)...)
+						res = res.After(newMaxPooling2D)
+						i++
+					}
 				}
-				layers[i] = maxPooling2D
-				res = res.After(maxPooling2D)
 			} else if fc, ok := layers[i].(layer.FC); ok {
-				fc = generateRandomFC(advCfg, fc.Input)
-				layers[i] = fc
+				prevOutput := fc.Input // TODO: maybe return back setting channels as default
+				if shouldDelete {
+					fmt.Println("deleting FC layer", i)
+					layers = append(layers[:i], layers[i+1:]...)
+					i--
+				} else {
+					fc = generateRandomFC(advCfg, prevOutput)
+					layers[i] = fc
+					prevOutput = fc.Output
+
+					if shouldInsert {
+						fmt.Println("inserting FC layer after", i)
+						newFC := generateRandomFC(advCfg, prevOutput)
+						layers = append(layers[:i+1], append([]layer.Config{newFC}, layers[i+1:]...)...)
+						prevOutput = newFC.Output
+						i++
+					}
+				}
 				// update input of next dense layer
 				nextFC := layers[i+1].(layer.FC)
-				nextFC.Input = fc.Output
+				nextFC.Input = prevOutput
 				layers[i+1] = nextFC
 			}
 		} else {
 			res = res.After(layers[i])
 		}
 	}
+	if res.Width == 0 || res.Height == 0 {
+		return nil, &MutationFailedError{}
+	}
+
 	// update input of first FC layer
 	firstFCIndex := findFirstFCIndex(layers)
 	firstFC := layers[firstFCIndex].(layer.FC)
-	prevOutput := getPrevOutput(layers, firstFCIndex, individual.isGrayscale)
+	prevOutput := getPrevConv2DOutput(layers, firstFCIndex, individual.isGrayscale)
 	firstFC.Input = prevOutput * res.Width * res.Height
 	layers[firstFCIndex] = firstFC
+
+	// print layers
+	for _, l := range layers {
+		fmt.Printf("%+v\n", l)
+	}
 
 	// create new model with mutated layers
 	name := uuid.New().String()
@@ -322,6 +385,7 @@ func (individual *Individual) Mutate(advCfg AdvancedConfig, customMutationChance
 	//for _, l := range layers {
 	//	fmt.Printf("%v\n", l)
 	//}
+
 	newModel.AddLayers(layers...)
 	err = newModel.Compile(individual.X(), individual.Y(), m.WithBatchSize(advCfg.BatchSize))
 	mutated = &Individual{
@@ -343,7 +407,7 @@ func (err *CrossoverFailedError) Error() string {
 	return fmt.Sprintf("crossover failed: %v", err.recoverData)
 }
 
-func (individual *Individual) CrossoverOLD(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
+func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
 	// get slices of layers of both models
 	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
 	layersRight := make([]layer.Config, len(other.Chain.Layers))
@@ -380,13 +444,13 @@ func (individual *Individual) CrossoverOLD(advCfg AdvancedConfig, other *Individ
 					conv2D.Input = 3
 				}
 			} else {
-				conv2D.Input = getPrevOutput(layers, crossoverPoint, individual.isGrayscale)
+				conv2D.Input = getPrevConv2DOutput(layers, crossoverPoint, individual.isGrayscale)
 			}
 			layers[crossoverPoint] = conv2D
 		} else if _, ok := layers[crossoverPoint].(layer.MaxPooling2D); ok {
 			nextConv2DIndex := findNextConv2DIndex(layers, crossoverPoint)
 			if nextConv2DIndex != -1 {
-				prevOutput := getPrevOutput(layers, crossoverPoint, individual.isGrayscale)
+				prevOutput := getPrevConv2DOutput(layers, crossoverPoint, individual.isGrayscale)
 				nextConv2D := layers[nextConv2DIndex].(layer.Conv2D)
 				nextConv2D.Input = prevOutput
 				layers[nextConv2DIndex] = nextConv2D
@@ -402,7 +466,7 @@ func (individual *Individual) CrossoverOLD(advCfg AdvancedConfig, other *Individ
 		input := (individual.Sequential.X().Inputs()[0].Shape())[2:]
 		res := (&utils.Resolution{Width: input[1], Height: input[0]}).AfterMany(layers[:firstFCIndex-1])
 		fc := layers[firstFCIndex].(layer.FC)
-		fc.Input = getPrevOutput(layers, firstFCIndex-1, individual.isGrayscale) * res.Width * res.Height
+		fc.Input = getPrevConv2DOutput(layers, firstFCIndex-1, individual.isGrayscale) * res.Width * res.Height
 		if fc.Input == 0 {
 			return errors.New("input is 0")
 		}
@@ -451,7 +515,7 @@ func (individual *Individual) CrossoverOLD(advCfg AdvancedConfig, other *Individ
 		err1, err2
 }
 
-func (individual *Individual) Crossover(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
+func (individual *Individual) CrossoverAlt(advCfg AdvancedConfig, other *Individual) (child1, child2 *Individual, err1, err2 error) {
 	// get slices of layers of both models
 	layersLeft := make([]layer.Config, len(individual.Chain.Layers))
 	layersRight := make([]layer.Config, len(other.Chain.Layers))

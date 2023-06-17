@@ -1,4 +1,5 @@
 import {mat4} from "gl-matrix";
+import {WindowGetSize, WindowSetSize} from "../wailsjs/runtime";
 
 let gl;
 
@@ -6,8 +7,10 @@ const fieldOfView = (45 * Math.PI) / 180; // in radians
 const zNear = 0.1;
 const zFar = 1000.0;
 
-let models = [[{Type: "Conv2D", Width: 10, Height: 5}, {Type: "MaxPooling2D", Width: 7, Height: 5}, {Type: "FC", Output: 128}, {Type: "FC", Output: 10}]];
-let currentModelIndex = 0; //  todo -1
+
+let models;
+let currentModelIndex;
+
 let buffers;
 let vertexCount = 0;
 let height = 0;
@@ -46,6 +49,50 @@ const fsSource = `
       gl_FragColor = vColor;
     }
   `;
+
+// initBestStructureBlock();  // TODO: remove
+// models = [[
+//     {Type: "Conv2D", Width: 10, Height: 5},
+//     {Type: "MaxPooling2D", Width: 7, Height: 5},
+//     {Type: "Conv2D", Width: 10, Height: 5},
+//     {Type: "MaxPooling2D", Width: 7, Height: 5},
+//     {Type: "Conv2D", Width: 10, Height: 5},
+//     {Type: "FC", Output: 128},
+//     {Type: "FC", Output: 10}
+// ]];
+//
+// setCurrentModel(0);
+
+export function setCurrentModel(index) {
+    currentModelIndex = index;
+    initBuffers();
+
+    const table = document.querySelector("#best-structure-table");
+    table.innerHTML = "";
+    const model = models[index];
+    for (let i = 0; i < model.length; i++) {
+        const row = document.createElement("tr");
+        const layerNumber = document.createElement("td");
+        layerNumber.innerText = i.toString();
+        const type = document.createElement("td");
+        type.innerText = model[i].Type;
+        const filter = document.createElement("td");
+        filter.innerText = model[i].Width ? model[i].Width + "x" + model[i].Height : "-";
+        const pad = document.createElement("td");
+        pad.innerText = model[i].Pad ?? "-";
+        const stride = document.createElement("td");
+        stride.innerText = model[i].Stride ?? "-";
+        const input = document.createElement("td");
+        input.innerText = model[i].Input ?? "-";
+        const output = document.createElement("td");
+        output.innerText = model[i].Output ?? "-";
+        const activation = document.createElement("td");
+        activation.innerText = model[i].Activation ?? "-";
+
+        row.append(layerNumber, type, filter, pad, stride, input, output, activation);
+        table.append(row);
+    }
+}
 
 function initShaderProgram(vsSource, fsSource) {
     const vertexShader = loadShader(gl.VERTEX_SHADER, vsSource);
@@ -194,7 +241,7 @@ function setColorAttribute(programInfo) {
 }
 
 function render(programInfo, buffers) {
-    gl.clearColor(0.9, 0.9, 0.9, 1.0);
+    gl.clearColor(1.0, 1.0, 1.0, 1.0);
     gl.clearDepth(1.0); // Clear everything
     gl.enable(gl.DEPTH_TEST); // Enable depth testing
     gl.depthFunc(gl.LEQUAL); // Near things obscure far things
@@ -259,9 +306,21 @@ function loop(programInfo) {
     setTimeout(() => loop(programInfo, buffers), 1000 / 60);
 }
 
-export function initVisualization() {
+export async function initBestStructureBlock() {
     window.visualizationCanvas = document.querySelector("#visualization-canvas");
-    window.dispatchEvent(new Event("resize"));
+    window.bestStructureTable = document.querySelector("#best-structure-table");
+
+    models = [];
+    currentModelIndex = -1;
+
+    window.visualizationCanvas.width = window.visualizationCanvas.clientWidth;
+    window.visualizationCanvas.height = window.visualizationCanvas.clientHeight;
+
+    const bestStructureBlock = document.querySelector("#best-structure");
+    await WindowSetSize(
+        (await WindowGetSize()).w,
+        bestStructureBlock.offsetHeight + (window.navigator.userAgent.includes("Windows") ? 65 : 35),
+    );
 
     gl = window.visualizationCanvas.getContext("webgl2");
     if (gl === null) {
@@ -285,29 +344,28 @@ export function initVisualization() {
     initBuffers();
 
     window.visualizationCanvas.addEventListener("mousemove", (e) => {
-        const rect = window.visualizationCanvas.getBoundingClientRect();
-        let x = ((e.clientX - rect.left) / rect.width * 2 - 1) * -translation[2]/2 - spanX;
-        let y = (e.clientY - rect.top) / rect.height * -1;
-
-        if (height > fcMaxWidth) { // what the hell is this
-            const heightCursed = height/2/Math.tan(fieldOfView/2);
-            const min_new = -(height + (-translation[2] - heightCursed)/2);
-            const max_new = -(0.0 - (-translation[2] - heightCursed)/2);
-            y = ((max_new - min_new) * (y - -1.0) / (0.0 - (-1.0)) + min_new);
-        } else {
-            const aspect = rect.height / rect.width;
-            const min_new = -(height + (-translation[2] * aspect - height)/2);
-            const max_new = -(0.0 - (-translation[2] * aspect - height)/2);
-            y = ((max_new - min_new) * (y - -1.0) / (0.0 - (-1.0)) + min_new);
+        if (currentModelIndex === -1) {
+            return;
         }
-        y -= spanY;
+        const rect = window.visualizationCanvas.getBoundingClientRect();
+        let x = ((e.clientX - rect.left) / rect.width * 2 - 1) * -translation[2] / 2 - spanX;
+        let y = (e.clientY - rect.top) / rect.height * -1;
+        const heightCursed = height / 2 / Math.tan(fieldOfView / 2);
+        const min_new = -(height + (-translation[2] - heightCursed) / 2);
+        const max_new = -(0.0 - (-translation[2] - heightCursed) / 2);
+        y = ((max_new - min_new) * (y - -1.0) / (0.0 - (-1.0)) + min_new) - spanY;
 
-        for (const layer of models[currentModelIndex]) {
-            if (x >= layer.x0 && x <= layer.x1 && y <= layer.y0 && y >= layer.y1) {
-                layer.hovered = true;
+        const layers = models[currentModelIndex];
+        for (let i = 0; i < layers.length; i++) {
+            if (x >= layers[i].x0 && x <= layers[i].x1 && y <= layers[i].y0 && y >= layers[i].y1) {
+                layers[i].hovered = true;
                 initBuffers();
-            } else if (layer.hovered) {
-                layer.hovered = false;
+                for (let j = 0; j < window.bestStructureTable.children.length; j++) {
+                    window.bestStructureTable.children[j].classList.remove("bg-primary", "text-white");
+                }
+                window.bestStructureTable.children[i].classList.add("bg-primary", "text-white");
+            } else if (layers[i].hovered) {
+                layers[i].hovered = false;
                 initBuffers();
             }
         }
@@ -317,8 +375,8 @@ export function initVisualization() {
                 lastMouseX = e.x;
                 lastMouseY = e.y;
             }
-            spanX += (e.x - lastMouseX) / window.visualizationCanvas.width * -translation[2]/2
-            spanY -= (e.y - lastMouseY) / window.visualizationCanvas.height * -translation[2]/2;
+            // spanX += (e.x - lastMouseX) / window.visualizationCanvas.width * -translation[2]/2
+            spanY -= (e.y - lastMouseY) / window.visualizationCanvas.height * -translation[2] / 2;
             lastMouseX = e.x;
             lastMouseY = e.y;
         }
@@ -335,6 +393,9 @@ export function initVisualization() {
     });
 
     window.visualizationCanvas.addEventListener("mouseleave", (e) => {
+        if (currentModelIndex === -1) {
+            return;
+        }
         for (const layer of models[currentModelIndex]) {
             if (layer.hovered) {
                 layer.hovered = false;
@@ -347,7 +408,7 @@ export function initVisualization() {
     });
 
     window.visualizationCanvas.addEventListener("wheel", (e) => {
-        zoom += e.deltaY * 0.001;
+        zoom += (e.deltaY * 0.001) * zoom;
     });
 
     loop(programInfo, buffers);
@@ -355,6 +416,5 @@ export function initVisualization() {
 
 export function pushBestLayers(bestLayers) {
     models.push(bestLayers)
-    currentModelIndex++;
-    initBuffers();
+    setCurrentModel(models.length - 1);
 }

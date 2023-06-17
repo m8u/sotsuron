@@ -155,7 +155,6 @@ func GenerateRandomStructure(advCfg AdvancedConfig, inputWidth, inputHeight, num
 			break
 		}
 		fmt.Println(conv2D)
-		fmt.Println(newRes.String())
 		layers = append(layers, conv2D)
 		prevOutput = conv2D.Output
 		res = newRes

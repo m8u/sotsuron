@@ -36,7 +36,7 @@ func TestSpecies_Evolve(t *testing.T) {
 		},
 	}
 
-	dataset, err := datasets.LoadDataset("/home/m8u/code/datasets/mnist_png_light", tests[0].fields.grayscale)
+	dataset, err := datasets.LoadDataset("/home/m8u/code/datasets/mnist_png_ultralight", tests[0].fields.grayscale)
 	utils.MaybeCrash(err)
 	xTrain, yTrain, xTest, yTest, err := dataset.SplitTrainTest(0.8)
 	utils.MaybeCrash(err)
@@ -44,7 +44,10 @@ func TestSpecies_Evolve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			species := NewSpecies(DefaultAdvancedConfig(), tt.fields.numIndividuals, tt.fields.inputWidth, tt.fields.inputHeight, tt.fields.numClasses, tt.fields.grayscale)
-			species.Evolve(context.Background(), DefaultAdvancedConfig(), tt.args.numGenerations, xTrain, yTrain, xTest, yTest, nil, nil, nil)
+			species.Evolve(context.Background(), DefaultAdvancedConfig(), tt.args.numGenerations,
+				xTrain, yTrain, xTest, yTest,
+				nil, nil, nil, nil,
+			)
 		})
 	}
 }

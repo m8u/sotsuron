@@ -5,6 +5,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"golang.org/x/exp/rand"
 	"time"
 )
@@ -20,11 +21,12 @@ func main() {
 
 	//Create application with options
 	err := wails.Run(&options.App{
-		Title:     "sotsuron",
-		Width:     1000,
-		Height:    700,
-		MinWidth:  1000,
-		MinHeight: 700,
+		Width:         1450,
+		Height:        720,
+		DisableResize: true,
+		Windows: &windows.Options{
+			DisableWindowIcon: true,
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

@@ -1,7 +1,7 @@
 import {Chart} from "chart.js/auto";
+import {getRelativePosition} from 'chart.js/helpers';
+import {setCurrentModel} from "./bestStructure";
 
-// Chart.defaults.responsive = true;
-Chart.defaults.devicePixelRatio = 2;
 Chart.defaults.maintainAspectRatio = false;
 
 export function initAllChart(epochs=10) {
@@ -52,10 +52,11 @@ export function initBestChart(generations=10) {
                 datasets: [
                     {
                         data: [],
-                        tension: 0.1,
-                        pointRadius: 1,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
                     }
                 ],
+                tooltipEvents: ["click"],
             },
             options: {
                 plugins: {
@@ -66,6 +67,9 @@ export function initBestChart(generations=10) {
                     legend: {
                         display: false
                     },
+                    tooltip: {
+                        intersect: false,
+                    }
                 },
                 scales: {
                     x: {
@@ -74,6 +78,12 @@ export function initBestChart(generations=10) {
                             text: "Поколение"
                         }
                     }
+                },
+                onClick: (e) => {
+                    const canvasPosition = getRelativePosition(e, window.bestChart);
+                    const generation = window.bestChart.scales.x.getValueForPixel(canvasPosition.x);
+                    console.log(generation)
+                    setCurrentModel(generation);
                 }
             }
         }
